@@ -24,7 +24,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        # 固定 ubuntu-24.04：ubuntu-latest 自 2026-10 起迁移到 Ubuntu 26。
+        os: [ubuntu-24.04, windows-latest, macos-latest]
         # `requires-python = ">=3.12"` in pyproject.toml is the floor here.
         python-version: ["3.12", "3.13", "3.14"]
     steps:
@@ -94,7 +95,7 @@ jobs:
 
   lint:
     name: Lint (rustfmt + clippy)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
 
