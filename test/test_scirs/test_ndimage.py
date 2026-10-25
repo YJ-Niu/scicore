@@ -82,7 +82,6 @@ def test_rotate():
     assert out.shape == (2, 2)
 
 
-@pytest.mark.xfail(reason="AttributeError: 'ArrayFlags' object has no attribute 'contiguous'")
 def test_distance_transform_bf():
     mask = 1 - np.array([[1.0, 1.0], [1.0, 1.0]])  # all background
     out = ndi.distance_transform_bf(mask)

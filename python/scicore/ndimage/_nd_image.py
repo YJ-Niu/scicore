@@ -923,3 +923,228 @@ def watershed_ift(input, markers, structure, output):
 # the correlate1d path).
 convolve1d = correlate1d
 convolve = correlate
+
+
+# ---------------------------------------------------------------------------
+# exact distance transform (scipy ``distance_transform_bf``)
+# ---------------------------------------------------------------------------
+
+_DT_INF = float('inf')
+
+
+def _dt_coords(lin, shape):
+    c = [0] * len(shape)
+    for ax in range(len(shape) - 1, -1, -1):
+        c[ax] = lin % shape[ax]
+        lin //= shape[ax]
+    return tuple(c)
+
+
+def _dt_linear(c, shape):
+    # Row-major (C order): must be the exact inverse of _dt_coords, i.e.
+    # lin = c[0]*shape[1]*... + c[1]*... + c[-1].  A descending Horner loop
+    # transposes the axes and breaks neighbour lookups in the BFS.
+    lin = 0
+    for k in range(len(shape)):
+        lin = lin * shape[k] + c[k]
+    return lin
+
+
+def _edt1d(fvals, fids, n, scale=1.0):
+    """1-D Felzenszwalb-Huttenlocher parabolic distance transform.
+
+    fvals[i] is the source cost at line position i (inf = no source);
+    fids[i] carries the identity of that source.  Returns (g, ids) with
+    g[i] = min_j (i - j)**2 * scale**2 + fvals[j].
+    """
+    srcs = [q for q in range(n) if fvals[q] < _DT_INF]
+    if not srcs:
+        return [_DT_INF] * n, [0] * n
+    v = [0] * n
+    vid = [0] * n
+    z = [0.0] * (n + 1)
+    k = 0
+    v[0] = srcs[0]
+    vid[0] = fids[srcs[0]]
+    z[0] = -_DT_INF
+    z[1] = _DT_INF
+
+    def elev(q):
+        return fvals[q] + (q * scale) ** 2
+
+    for q in srcs[1:]:
+        s = (elev(q) - elev(v[k])) / (2.0 * scale * (q - v[k]))
+        while s <= z[k]:
+            k -= 1
+            s = (elev(q) - elev(v[k])) / (2.0 * scale * (q - v[k]))
+        k += 1
+        v[k] = q
+        vid[k] = fids[q]
+        # z[k] is the left boundary of v[k]'s region (Felzenszwalb-Huttenlocher
+        # convention: z[k] = s, z[k+1] = +inf after inserting at position k)
+        z[k] = s
+        z[k + 1] = _DT_INF
+    g = [0.0] * n
+    ids = [0] * n
+    k = 0
+    for i in range(n):
+        x = i * scale
+        while z[k + 1] < x:
+            k += 1
+        dx = x - v[k] * scale
+        g[i] = dx * dx + fvals[v[k]]
+        ids[i] = vid[k]
+    return g, ids
+
+
+def _l1_1d(fvals, fids, n, scale=1.0):
+    """1-D city-block (L1) distance transform via forward/backward passes."""
+    fwd_v = [_DT_INF] * n
+    fwd_id = [0] * n
+    bwd_v = [_DT_INF] * n
+    bwd_id = [0] * n
+    for q in range(n):
+        best = fvals[q]
+        bid = fids[q]
+        if q > 0 and fwd_v[q - 1] + scale < best:
+            best = fwd_v[q - 1] + scale
+            bid = fwd_id[q - 1]
+        fwd_v[q] = best
+        fwd_id[q] = bid
+    for q in range(n - 1, -1, -1):
+        best = fvals[q]
+        bid = fids[q]
+        if q < n - 1 and bwd_v[q + 1] + scale < best:
+            best = bwd_v[q + 1] + scale
+            bid = bwd_id[q + 1]
+        bwd_v[q] = best
+        bwd_id[q] = bid
+    out_v = [0.0] * n
+    out_id = [0] * n
+    for q in range(n):
+        if bwd_v[q] < fwd_v[q]:
+            out_v[q] = bwd_v[q]
+            out_id[q] = bwd_id[q]
+        else:
+            out_v[q] = fwd_v[q]
+            out_id[q] = fwd_id[q]
+    return out_v, out_id
+
+
+def _dt_axis_transform(vals, ids, shape, ax, scale, transform):
+    """Apply a 1-D transform along every line of axis ``ax``."""
+    out_v = list(vals)
+    out_id = list(ids)
+    total = 1
+    for s in shape:
+        total *= s
+    for base in range(total):
+        c0 = _dt_coords(base, shape)
+        if c0[ax] != 0:
+            continue
+        n = shape[ax]
+        line_v = [0.0] * n
+        line_id = [0] * n
+        for q in range(n):
+            c = list(c0)
+            c[ax] = q
+            lin = _dt_linear(tuple(c), shape)
+            line_v[q] = vals[lin]
+            line_id[q] = ids[lin]
+        gv, gid = transform(line_v, line_id, n, scale)
+        for q in range(n):
+            c = list(c0)
+            c[ax] = q
+            lin = _dt_linear(tuple(c), shape)
+            out_v[lin] = gv[q]
+            out_id[lin] = gid[q]
+    return out_v, out_id
+
+
+def distance_transform_bf(input, metric, sampling, distances, features):
+    """Exact distance transform: distance to the nearest background pixel.
+
+    Mirrors the scipy C entry point.  ``input`` is the wrapper-encoded
+    array (interior foreground 1, boundary foreground 0, background -1);
+    entries < 0 are the distance sources.  metric: 1 = euclidean,
+    2 = city block (L1), 3 = chessboard (L-inf).  ``distances`` (float64
+    for metric 1, uint32 for 2/3) and ``features`` (int32 linear index of
+    the nearest source) are filled in place; either may be None.
+    """
+    a = np.asarray(input)
+    nd = a.ndim
+    shape = tuple(a.shape)
+    total = 1
+    for s in shape:
+        total *= s
+    if sampling is not None:
+        sampling = [float(s) for s in np.asarray(sampling, dtype=np.float64)]
+    else:
+        sampling = [1.0] * nd
+
+    values = [0.0] * total
+    for lin in range(total):
+        values[lin] = float(a[_dt_coords(lin, shape)])
+    srcs = [lin for lin in range(total) if values[lin] < 0.0]
+
+    d_out = [0.0] * total
+    f_out = list(range(total))
+
+    if srcs:
+        if metric in (1, 2):
+            transform = _edt1d if metric == 1 else _l1_1d
+            cur_v = [0.0] * total
+            cur_id = list(range(total))
+            for lin in range(total):
+                if values[lin] < 0.0:
+                    cur_v[lin] = 0.0
+                else:
+                    cur_v[lin] = _DT_INF
+            for ax in range(nd - 1, -1, -1):
+                cur_v, cur_id = _dt_axis_transform(
+                    cur_v, cur_id, shape, ax, sampling[ax], transform)
+            for lin in range(total):
+                if values[lin] >= 0.0:
+                    if metric == 1:
+                        d_out[lin] = math.sqrt(max(cur_v[lin], 0.0))
+                    else:
+                        d_out[lin] = cur_v[lin]
+                    f_out[lin] = cur_id[lin]
+        else:  # chessboard: multi-source BFS with unit Chebyshev steps
+            from collections import deque
+            dist = [_DT_INF] * total
+            s_id = [-1] * total
+            dq = deque()
+            for b in srcs:
+                dist[b] = 0.0
+                s_id[b] = b
+                dq.append(b)
+            deltas = [d for d in product((-1, 0, 1), repeat=nd) if any(d)]
+            while dq:
+                p = dq.popleft()
+                c0 = _dt_coords(p, shape)
+                base_d = dist[p]
+                for dlt in deltas:
+                    nc = tuple(c0[kk] + dlt[kk] for kk in range(nd))
+                    if any(cc < 0 or cc > shape[kk] - 1
+                           for kk, cc in enumerate(nc)):
+                        continue
+                    nlin = _dt_linear(nc, shape)
+                    step = max(abs(dlt[kk]) * sampling[kk]
+                               for kk in range(nd))
+                    ndist = base_d + step
+                    if ndist < dist[nlin]:
+                        dist[nlin] = ndist
+                        s_id[nlin] = s_id[p]
+                        dq.append(nlin)
+            for lin in range(total):
+                if values[lin] >= 0.0 and s_id[lin] >= 0:
+                    d_out[lin] = dist[lin]
+                    f_out[lin] = s_id[lin]
+
+    if distances is not None:
+        for lin in range(total):
+            distances[_dt_coords(lin, shape)] = d_out[lin]
+    if features is not None:
+        for lin in range(total):
+            features[_dt_coords(lin, shape)] = f_out[lin]

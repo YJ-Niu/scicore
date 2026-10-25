@@ -42,10 +42,10 @@ def test_nquad():
     assert np.isclose(val, 1.0, rtol=1e-10)
 
 
-@pytest.mark.xfail(reason="KeyError: 'boolean indexing'")
 def test_simpson():
-    # Simpson on y=[1,2,1], x=[0,1,2] = (1/6)(1 + 4*2 + 1) = 1.5
-    assert np.isclose(sint.simpson(np.array([1.0, 2.0, 1.0]), x=np.array([0.0, 1.0, 2.0])), 1.5)
+    # Simpson on y=[1,2,1], x=[0,1,2] = (1/3)(1 + 4*2 + 1) = 10/3
+    # （对二次函数精确；旧注释误写 1/6 系数且 10/6≠1.5）
+    assert np.isclose(sint.simpson(np.array([1.0, 2.0, 1.0]), x=np.array([0.0, 1.0, 2.0])), 10.0 / 3.0)
 
 
 @pytest.mark.xfail(reason="ValueError: truth value of array with more than one element is ambiguous")

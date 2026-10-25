@@ -177,8 +177,28 @@ def norm(a, ord=None, axis=None, keepdims=False, check_finite=True):
                 lange = get_lapack_funcs('lange', dtype=a.dtype, ilp64='preferred')
                 return lange(*lange_args)
 
-    # fall back to rsnumpy in every other case
-    return np.linalg.norm(a, ord=ord, axis=axis, keepdims=keepdims)
+    # fall back to rsnumpy in every other case.  rsnumpy's norm has no
+    # keepdims kwarg and no matrix ords ('fro', 1, inf), so handle those
+    # here.
+    if a.ndim == 2 and axis is None and ord in (None, 1, 2, 'fro', np.inf):
+        if ord in (None, 2, 'fro'):
+            nrm = np.sqrt(np.sum(np.abs(a) ** 2))
+        elif ord == 1:
+            nrm = np.max(np.sum(np.abs(a), axis=0))
+        else:
+            nrm = np.max(np.sum(np.abs(a), axis=1))
+    else:
+        nrm = np.linalg.norm(a, ord=ord, axis=axis)
+    if keepdims:
+        if axis is None:
+            nrm = nrm.reshape((1,) * a.ndim)
+        else:
+            axes = axis if isinstance(axis, (tuple, list)) else (axis,)
+            shape = list(a.shape)
+            for ax in axes:
+                shape[ax if ax >= 0 else ax + a.ndim] = 1
+            nrm = nrm.reshape(tuple(shape))
+    return nrm
 
 
 def _datacopied(arr, original):

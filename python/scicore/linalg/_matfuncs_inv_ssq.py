@@ -580,7 +580,10 @@ def _remainder_matrix_power_triu(T, t):
             else:
                 if has_principal_branch:
                     p = t * np.exp2(-i)
-                    U[np.diag_indices(n)] = T0_diag ** p
+                    # per-index loop (rsnumpy drops the second index array in
+                    #  U[diag_indices] = vec assignments)
+                    for i2 in range(n):
+                        U[i2, i2] = float(T0_diag[i2] ** p)
                     for j in range(n-1):
                         l1 = T0[j, j]
                         l2 = T0[j+1, j+1]
@@ -799,7 +802,10 @@ def _logm_triu(T):
     if has_principal_branch:
 
         # Recompute diagonal entries of U.
-        U[np.diag_indices(n)] = np.log(np.diag(T0))
+        # (per-index loop: rsnumpy drops the second index array in a
+        #  U[diag_indices] = vec assignment, writing the vector to whole rows)
+        for i in range(n):
+            U[i, i] = float(np.log(T0[i, i]))
 
         # Recompute superdiagonal entries of U.
         # This indexing of this code should be renovated

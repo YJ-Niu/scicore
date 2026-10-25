@@ -25,7 +25,7 @@ __all__ = [
     'betainccinv', 'betaincinv', 'betaln', 'binom', 'boxcox', 'boxcox1p',
     'btdtria', 'btdtrib', 'cbrt', 'chdtr', 'chdtrc', 'chdtri', 'chdtriv',
     'chndtr', 'chndtridf', 'chndtrinc', 'chndtrix', 'cosdg', 'cosm1', 'cotdg',
-    'dawsn', 'digammainv', 'ellipe', 'ellipeinc', 'ellipj', 'ellipk',
+    'dawsn', 'digamma', 'digammainv', 'ellipe', 'ellipeinc', 'ellipj', 'ellipk',
     'ellipkinc', 'ellipkm1', 'elliprc', 'elliprd', 'elliprf', 'elliprg',
     'elliprj', 'entr', 'erf', 'erfc', 'erfcinv', 'erfcx', 'erfi', 'erfinv',
     'eval_chebyc', 'eval_chebys', 'eval_chebyt', 'eval_chebyu',
@@ -335,6 +335,233 @@ def _stdtr(df, t):
 
 _register('stdtr', _math2(_stdtr))
 
+# --- Inverse error function (bisection on the monotone erf) ---
+def _erfinv(x):
+    if x < -1.0 or x > 1.0:
+        return float('nan')
+    if x == 1.0:
+        return float('inf')
+    if x == -1.0:
+        return float('-inf')
+    if x == 0.0:
+        return 0.0
+    sign = 1.0 if x > 0 else -1.0
+    x = abs(x)
+    lo, hi = 0.0, 1.0
+    while math.erf(hi) < x:
+        hi *= 2.0
+    for _ in range(300):
+        mid = 0.5 * (lo + hi)
+        if math.erf(mid) < x:
+            lo = mid
+        else:
+            hi = mid
+        if hi - lo < 1e-16:
+            break
+    return sign * 0.5 * (lo + hi)
+
+
+_register('erfinv', _math1(_erfinv))
+
+# --- Closed forms (scipy names, not in stdlib ``math``) ---
+_register('expit', _math1(lambda x: 0.5 * (1.0 + math.tanh(x / 2.0))))
+_register('exprel', _math1(lambda x: 1.0 if x == 0 else math.expm1(x) / x))
+_register('rel_entr', _math2(lambda x, y: 0.0 if x <= 0 else x * math.log(x / y)))
+_register('beta', _math2(lambda a, b: math.exp(math.lgamma(a) + math.lgamma(b) - math.lgamma(a + b))))
+
+# --- Digamma psi(z) = Gamma'/Gamma: reflection + upward shift + asymptotic ---
+_EULER_GAMMA = 0.5772156649015329
+
+
+def _digamma(z):
+    if z < 0.5:
+        return _digamma(1.0 - z) + math.pi / math.tan(math.pi * z)
+    result = 0.0
+    while z < 8.0:
+        result -= 1.0 / z
+        z += 1.0
+    inv = 1.0 / z
+    inv2 = inv * inv
+    result += math.log(z) - 0.5 * inv - inv2 * (
+        1.0 / 12.0 - inv2 * (1.0 / 120.0 - inv2 * (1.0 / 252.0 - inv2 * (
+            1.0 / 240.0 - inv2 * (1.0 / 132.0 - inv2 * 691.0 / 32760.0)))))
+    return result
+
+
+_register('digamma', _math1(_digamma))
+_register('psi', _math1(_digamma))
+
+# --- Regularized incomplete gamma P(a, x) / Q(a, x) ---
+def _gser(a, x):
+    """P(a, x) via the converging series (used for x < a + 1)."""
+    ap = a
+    s = 1.0 / a
+    d = s
+    for _ in range(2000):
+        ap += 1.0
+        d *= x / ap
+        s += d
+        if abs(d) < abs(s) * 3e-16:
+            break
+    return s * math.exp(-x + a * math.log(x) - math.lgamma(a))
+
+
+def _gcf(a, x):
+    """Q(a, x) via the continued fraction (used for x >= a + 1)."""
+    fpmin = 1e-300
+    b = x + 1.0 - a
+    c = 1.0 / fpmin
+    d = 1.0 / b
+    h = d
+    for i in range(1, 2000):
+        an = -float(i) * (i - a)
+        b += 2.0
+        d = an * d + b
+        if abs(d) < fpmin:
+            d = fpmin
+        c = b + an / c
+        if abs(c) < fpmin:
+            c = fpmin
+        d = 1.0 / d
+        de = d * c
+        h *= de
+        if abs(de - 1.0) < 3e-16:
+            break
+    return math.exp(-x + a * math.log(x) - math.lgamma(a)) * h
+
+
+def _gammainc(a, x):
+    if a <= 0.0 or x < 0.0:
+        return float('nan')
+    if x == 0.0:
+        return 0.0
+    if x < a + 1.0:
+        return _gser(a, x)
+    return 1.0 - _gcf(a, x)
+
+
+_register('gammainc', _math2(_gammainc))
+_register('gammaincc', _math2(lambda a, x: 1.0 - _gammainc(a, x)))
+
+# --- Integer-order Bessel functions J_0, J_1, Y_0 ---
+def _j0(x):
+    ax = abs(x)
+    if ax < 15.0:
+        t = x * x / 4.0
+        term = 1.0
+        s = 1.0
+        for k in range(1, 200):
+            term *= -t / (k * k)
+            s += term
+            if abs(term) < abs(s) * 1e-16:
+                break
+        return s
+    c = math.cos(x - math.pi / 4)
+    s = math.sin(x - math.pi / 4)
+    return math.sqrt(2.0 / (math.pi * ax)) * (
+        c - s / (8.0 * ax) - 9.0 * c / (128.0 * ax * ax)
+        + 75.0 * s / (1024.0 * ax ** 3))
+
+
+def _j1(x):
+    ax = abs(x)
+    if ax < 15.0:
+        half = x / 2.0
+        term = half
+        s = half
+        for k in range(1, 200):
+            term *= -half * half / (k * (k + 1))
+            s += term
+            if abs(term) < abs(s) * 1e-16:
+                break
+        return s
+    c = math.cos(x - 3.0 * math.pi / 4)
+    s = math.sin(x - 3.0 * math.pi / 4)
+    return math.sqrt(2.0 / (math.pi * ax)) * (
+        c + 3.0 * s / (8.0 * ax) + 15.0 * c / (128.0 * ax * ax)
+        - 105.0 * s / (1024.0 * ax ** 3))
+
+
+def _y0(x):
+    ax = abs(x)
+    if ax == 0.0:
+        return float('-inf')
+    if ax < 15.0:
+        # y0 = (2/pi) * [(ln(x/2) + gamma) J0(x) - sum_k (-1)^k H_k (x^2/4)^k / (k!)^2]
+        t = ax * ax / 4.0
+        term = 1.0
+        j0v = 1.0
+        for k in range(1, 200):
+            term *= -t / (k * k)
+            j0v += term
+            if abs(term) < abs(j0v) * 1e-16:
+                break
+        s = 0.0
+        harm = 0.0
+        pt = 1.0
+        for k in range(1, 200):
+            harm += 1.0 / k
+            pt *= t / (k * k)
+            term = (-1.0) ** k * harm * pt
+            s += term
+            if abs(term) < abs(s) * 1e-16:
+                break
+        return (2.0 / math.pi) * ((math.log(ax / 2.0) + _EULER_GAMMA) * j0v - s)
+    c = math.cos(ax - math.pi / 4)
+    s = math.sin(ax - math.pi / 4)
+    return math.sqrt(2.0 / (math.pi * ax)) * (
+        s + c / (8.0 * ax) - 9.0 * s / (128.0 * ax * ax)
+        + 75.0 * c / (1024.0 * ax ** 3))
+
+
+_register('j0', _math1(_j0))
+_register('j1', _math1(_j1))
+_register('y0', _math1(_y0))
+
+# --- Spherical Bessel j_n (upward three-term recurrence) ---
+def _spherical_jn(n, x):
+    n = int(n)
+    x = float(x)
+    if x == 0.0:
+        return 1.0 if n == 0 else 0.0
+    if n == 0:
+        return math.sin(x) / x
+    jnm1 = math.sin(x) / x
+    jn = math.sin(x) / x / x - math.cos(x) / x
+    for k in range(1, n):
+        jnp1 = (2.0 * k + 1.0) / x * jn - jnm1
+        jnm1, jn = jn, jnp1
+    return jn
+
+
+_register('_spherical_jn', _math2(_spherical_jn))
+
+# --- Si(x) / Ci(x) via their entire power series ---
+def _sici(x):
+    x = float(x)
+    if x == 0.0:
+        return (0.0, float('-inf'))
+    ax = abs(x)
+    term = x
+    si = x
+    for k in range(200):
+        term *= -x * x * (2 * k + 1) / ((2 * k + 2) * (2 * k + 3) ** 2)
+        si += term
+        if abs(term) < abs(si) * 1e-16:
+            break
+    ci = math.log(ax) + _EULER_GAMMA
+    term = -(ax * ax) / 4.0
+    ci += term
+    for k in range(2, 200):
+        term *= -ax * ax * (k - 1) / (2.0 * k * k * (2 * k - 1))
+        ci += term
+        if abs(term) < abs(ci) * 1e-16:
+            break
+    return (si, ci)
+
+
+_register('sici', _math1(_sici))
+
 # --- two-argument math functions ---
 _for_math2 = []
 for _n in _for_math2:
@@ -379,6 +606,34 @@ def _binom(n, k):
                         - math.lgamma(n - k + 1))
     except (ValueError, OverflowError):
         return float('nan')
+
+# --- orthogonal polynomial evaluations (3-term recurrences) ---
+def _eval_legendre(n, x):
+    """Legendre polynomial P_n(x) via the three-term recurrence."""
+    n = int(n)
+    x = float(x)
+    if n == 0:
+        return 1.0
+    p0, p1 = 1.0, x
+    for kk in range(2, n + 1):
+        p0, p1 = p1, ((2 * kk - 1) * x * p1 - (kk - 1) * p0) / kk
+    return p1
+
+
+def _eval_hermite(n, x):
+    """Physicist's Hermite polynomial H_n(x) via the recurrence."""
+    n = int(n)
+    x = float(x)
+    if n == 0:
+        return 1.0
+    h0, h1 = 1.0, 2.0 * x
+    for kk in range(2, n + 1):
+        h0, h1 = h1, 2.0 * x * h1 - 2.0 * (kk - 1) * h0
+    return h1
+
+
+_register('eval_legendre', _eval_legendre)
+_register('eval_hermite', _eval_hermite)
 
 # Register the rest as NaN-returning stubs
 _for_stub = [n for n in __all__ if n not in _SCALAR_FUNCS and n not in (
@@ -517,7 +772,7 @@ for _name, _func in _SCALAR_FUNCS.items():
     if _name not in __all__:
         continue
     nout = 4 if _name in ('airy', 'airye', 'ellipj', 'kelvin') else \
-           2 if _name in ('fresnel',) else 1
+           2 if _name in ('fresnel', 'sici') else 1
     globals()[_name] = _ufunc(_name, _func, nout=nout)
 
 # Alias names that start with underscore (internal ufuncs)
@@ -528,7 +783,7 @@ for _name in ('_cosine_cdf', '_cosine_invcdf', '_bivariate_normal_cdf',
               '_mathieu_cem', '_mathieu_sem', '_normalized_gen_harmonic',
               '_riemann_zeta', '_scaled_exp1', '_sf_error_test_function',
               '_sinpi', '_smirnovc', '_smirnovci', '_smirnovp',
-              '_spherical_in', '_spherical_in_d', '_spherical_jn',
+              '_spherical_in', '_spherical_in_d',
               '_spherical_jn_d', '_spherical_kn', '_spherical_kn_d',
               '_spherical_yn', '_spherical_yn_d', '_von_mises_cdf',
               '_stirling2_inexact', '_zeta'):

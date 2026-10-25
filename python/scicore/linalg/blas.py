@@ -357,6 +357,180 @@ def find_best_blas_type(arrays=(), dtype=None):
     return prefix, dtype, prefer_fortran
 
 
+# Level-1 BLAS functions with pure-rsnumpy fallbacks, used when the native
+# fblas module has not yet ported them (called array-first, e.g. nrm2(a)).
+def _py_nrm2(x, *args):
+    a = np.asarray(x)
+    if a.dtype.char in 'FC':
+        a = np.abs(a)
+    return float(np.sqrt(np.sum(a * a)))
+
+
+def _py_dot(x, y, *args):
+    return float(np.sum(np.asarray(x) * np.asarray(y)))
+
+
+def _py_asum(x, *args):
+    a = np.asarray(x)
+    if a.dtype.char in 'FC':
+        a = np.abs(a)
+    return float(np.sum(a))
+
+
+def _py_jacobi_eigh(M, compute_v=True):
+    """Real symmetric eigen-decomposition via cyclic Jacobi rotations.
+
+    M : list of lists (n x n, symmetric)
+    Returns (w, V): w = eigenvalues ascending, V = row-major n x n list
+    whose columns are the matching eigenvectors (None if not compute_v).
+    """
+    import math
+    n = len(M)
+    A = [row[:] for row in M]
+    V = ([[1.0 if i == j else 0.0 for j in range(n)] for i in range(n)]
+         if compute_v else None)
+    for _sweep in range(300):
+        for p in range(n - 1):
+            for q in range(p + 1, n):
+                apq = A[p][q]
+                scale = max(abs(A[p][p]), abs(A[q][q]), 1e-300)
+                if abs(apq) <= 1e-17 * scale:
+                    continue
+                app, aqq = A[p][p], A[q][q]
+                theta = (aqq - app) / (2.0 * apq)
+                t = ((1.0 if theta >= 0.0 else -1.0)
+                     / (abs(theta) + math.hypot(theta, 1.0)))
+                c = 1.0 / math.hypot(t, 1.0)
+                s = t * c
+                for k in range(n):
+                    if k != p and k != q:
+                        akp, akq = A[k][p], A[k][q]
+                        A[k][p] = A[p][k] = c * akp - s * akq
+                        A[k][q] = A[q][k] = s * akp + c * akq
+                A[p][p] = app - t * apq
+                A[q][q] = aqq + t * apq
+                A[p][q] = A[q][p] = 0.0
+                if compute_v:
+                    for k in range(n):
+                        vkp, vkq = V[k][p], V[k][q]
+                        V[k][p] = c * vkp - s * vkq
+                        V[k][q] = s * vkp + c * vkq
+        off = math.sqrt(sum(A[i][j] ** 2
+                            for i in range(n) for j in range(n) if i != j))
+        if off < 1e-14:
+            break
+    diag = [A[i][i] for i in range(n)]
+    order = sorted(range(n), key=diag.__getitem__)
+    w = [diag[i] for i in order]
+    if not compute_v:
+        return w, None
+    v = [[V[i][order[j]] for j in range(n)] for i in range(n)]
+    return w, v
+
+
+def _py_sbevd(ab, compute_v=True, lower=True, overwrite_ab=False, **kwargs):
+    """Pure-Python stand-in for ?sbevd (symmetric banded eigenproblem).
+
+    Accepts (n, n) full, (2, n) port-convention, or (n, 2) LAPACK band
+    layouts; returns the scipy-fLAPACK style (w, v, info) triple.
+    """
+    ab = np.asarray(ab, dtype=np.float64)
+    sh = ab.shape
+    if len(sh) == 2 and sh[0] == sh[1]:
+        n = sh[0]
+        M = [[float(ab[i, j]) for j in range(n)] for i in range(n)]
+    elif len(sh) == 2 and sh[0] == 2:
+        n = sh[1]
+        if lower:
+            # scipy lower band: a_band[i-j, j] = a[i,j]  ->  row 0 = diagonal,
+            # row 1 = first subdiagonal (a[i+1, i] at column i).
+            d = [float(ab[0, i]) for i in range(n)]
+            e = [float(ab[1, i]) for i in range(n - 1)]
+        else:
+            # scipy upper band (u=1): a_band[1+i-j, j] = a[i,j]  ->  row 1 =
+            # diagonal, row 0 = first superdiagonal (a[i, i+1] at column i+1).
+            d = [float(ab[1, i]) for i in range(n)]
+            e = [float(ab[0, i]) for i in range(1, n)]
+        M = []
+        for i in range(n):
+            row = [0.0] * n
+            row[i] = d[i]
+            if i > 0:
+                row[i - 1] = e[i - 1]
+            if i < n - 1:
+                row[i + 1] = e[i]
+            M.append(row)
+    else:  # (n, 2) LAPACK layout
+        n = sh[0]
+        d = [float(ab[i, i % 2]) for i in range(n)]
+        e = ([float(ab[i + 1, i]) for i in range(n - 1)] if lower
+             else [float(ab[i, i + 1]) for i in range(n - 1)])
+        M = []
+        for i in range(n):
+            row = [0.0] * n
+            row[i] = d[i]
+            if i > 0:
+                row[i - 1] = e[i - 1]
+            if i < n - 1:
+                row[i + 1] = e[i]
+            M.append(row)
+    w, v = _py_jacobi_eigh(M, compute_v=compute_v)
+    if compute_v:
+        return np.array(w), np.array(v), 0
+    return np.array(w), None, 0
+
+
+def _py_trtrs(a, b, overwrite_b=False, lower=False, trans=0,
+              unitdiag=False, left_side=True, **kwargs):
+    """Pure-Python triangular solve (LAPACK ?trtrs semantics).
+
+    Solves op(a) x = b with op(a) = a (trans=0) or a.T (trans in (1, 2)),
+    using the triangle selected by ``lower`` and a unit diagonal when
+    ``unitdiag``.  Returns (x, info): info is 0 on success or i+1 when the
+    i-th diagonal element is exactly zero.
+    """
+    a = np.asarray(a, dtype=np.float64)
+    b = np.asarray(b, dtype=np.float64)
+    n = a.shape[0]
+    if trans in (1, 2):
+        M = [[float(a[j, i]) for j in range(n)] for i in range(n)]
+        eff_lower = not lower
+    else:
+        M = [[float(a[i, j]) for j in range(n)] for i in range(n)]
+        eff_lower = lower
+
+    def solve_one(rhs):
+        x = [0.0] * n
+        idx = range(n) if eff_lower else range(n - 1, -1, -1)
+        for i in idx:
+            s = rhs[i]
+            rng = range(i) if eff_lower else range(i + 1, n)
+            for j in rng:
+                s -= M[i][j] * x[j]
+            d = 1.0 if unitdiag else M[i][i]
+            if d == 0.0:
+                return None, i + 1
+            x[i] = s / d
+        return x, 0
+
+    if b.ndim == 1:
+        x, info = solve_one([float(b[i]) for i in range(n)])
+        return (np.array(x) if x is not None else None), info
+    k = b.shape[1]
+    cols = []
+    for jcol in range(k):
+        x, info = solve_one([float(b[i, jcol]) for i in range(n)])
+        if info:
+            return None, info
+        cols.append(x)
+    out = [[cols[jcol][i] for jcol in range(k)] for i in range(n)]
+    return np.array(out), 0
+
+
+_blas_py_fallbacks = {'nrm2': _py_nrm2, 'dot': _py_dot, 'asum': _py_asum,
+                      'sbevd': _py_sbevd, 'trtrs': _py_trtrs}
+
+
 def _get_funcs(
     names, arrays, dtype, lib_name, fmodule, fmodule_name, alias, ilp64="preferred"
 ):
@@ -380,6 +554,9 @@ def _get_funcs(
         func_name = prefix + name
         func_name = alias.get(func_name, func_name)
         func = getattr(fmodule, func_name, None)
+        if func is None:
+            # Pure-rsnumpy fallback for level-1 functions not yet ported
+            func = _blas_py_fallbacks.get(name)
         if func is None:
             # Stub for BLAS functions not yet ported to Rust/rsnumpy
             def _blas_stub(*args, **kwargs):
@@ -567,5 +744,9 @@ for _blas_name in ('dtrsm', 'strsm', 'ctrsm', 'ztrsm',
                    'swap', 'sswap', 'dswap', 'cswap', 'zswap',
                    'scal', 'sscal', 'dscal', 'cscal', 'zscal',
                    'copy', 'scopy', 'dcopy', 'ccopy', 'zcopy'):
-    globals()[_blas_name] = _make_blas_stub(_blas_name)
+    _blas_base = _blas_name[1:] if _blas_name[:1] in ('s', 'd', 'c', 'z') else _blas_name
+    if _blas_base in _blas_py_fallbacks:
+        globals()[_blas_name] = _blas_py_fallbacks[_blas_base]
+    else:
+        globals()[_blas_name] = _make_blas_stub(_blas_name)
 

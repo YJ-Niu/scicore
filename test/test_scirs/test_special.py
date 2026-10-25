@@ -43,19 +43,16 @@ def test_sinc():
 
 # ---------------- not yet ported / broken ----------------
 
-@pytest.mark.xfail(reason="returns nan")
 def test_erfinv():
     assert np.isclose(sp.erfinv(sp.erf(0.7)), 0.7, rtol=1e-10)
 
 
-@pytest.mark.xfail(reason="returns nan")
 def test_beta_betainc():
     assert np.isclose(sp.beta(1.0, 1.0), 1.0)
     assert np.isclose(sp.beta(2.0, 3.0), 1.0 / 12.0)
     assert np.isclose(sp.betainc(2.0, 2.0, 0.5), 0.5)
 
 
-@pytest.mark.xfail(reason="returns nan")
 def test_digamma_psi():
     euler = 0.5772156649015329
     assert np.isclose(sp.digamma(1.0), -euler, rtol=1e-12)
@@ -68,33 +65,34 @@ def test_zeta():
     assert np.isclose(sp.zeta(4.0), np.pi**4 / 90, rtol=1e-10)
 
 
-@pytest.mark.xfail(reason="returns nan")
 def test_bessel_j0_j1_y0():
     assert np.isclose(sp.j0(0.0), 1.0)
     assert np.isclose(sp.j0(2.4048255577), 0.0, atol=1e-7)
     assert np.isclose(sp.j1(0.0), 0.0)
-    assert np.isclose(sp.y0(1.0), 0.7812128213, rtol=1e-6)
+    assert np.isclose(sp.y0(1.0), 0.08825696421567695, rtol=1e-9)
 
 
-@pytest.mark.xfail(reason="BLAS dsbevd not yet ported")
 def test_roots_legendre():
-    r = sp.roots_legendre(5)
-    assert np.allclose(sorted(r), -np.array(sorted(r))[::-1], atol=1e-12)
+    x, w = sp.roots_legendre(5)
+    # roots of P_5 (Gauss-Legendre nodes) and the quadrature weights
+    expected_x = [-0.906179845938654, -0.5384693101056831, 0.0,
+                  0.5384693101056831, 0.906179845938654]
+    expected_w = [0.23692688505618908, 0.47862867049936647,
+                  0.5688888888888889, 0.47862867049936647, 0.23692688505618908]
+    assert np.allclose(sorted(x), expected_x, atol=1e-12)
+    assert np.allclose(sorted(w), sorted(expected_w), atol=1e-12)
 
 
-@pytest.mark.xfail(reason="BLAS dsbevd not yet ported")
 def test_roots_hermite():
-    r = sp.roots_hermite(3)
-    assert np.allclose(np.sort(r), np.sort([0.0, -np.sqrt(1.5), np.sqrt(1.5)]), atol=1e-12)
+    x, _ = sp.roots_hermite(3)
+    assert np.allclose(np.sort(x), np.sort([0.0, -np.sqrt(1.5), np.sqrt(1.5)]), atol=1e-12)
 
 
-@pytest.mark.xfail(reason="returns nan")
 def test_eval_legendre():
     x = 0.4
     assert np.isclose(sp.eval_legendre(2, x), (3 * x**2 - 1) / 2)
 
 
-@pytest.mark.xfail(reason="returns nan")
 def test_expit():
     assert np.isclose(sp.expit(0.0), 0.5)
     assert np.isclose(sp.expit(2.0), 1.0 / (1.0 + np.exp(-2.0)), rtol=1e-12)
@@ -107,33 +105,28 @@ def test_logsumexp():
     assert np.isclose(sp.logsumexp(x), expected, rtol=1e-12)
 
 
-@pytest.mark.xfail(reason="returns nan")
 def test_rel_entr_xlogy():
     assert np.isclose(sp.rel_entr(2.0, 1.0), 2.0 * np.log(2.0))
     assert np.isclose(sp.xlogy(3.0, 2.0), 3.0 * np.log(2.0))
     assert np.isclose(sp.xlogy(0.0, 2.0), 0.0)
 
 
-@pytest.mark.xfail(reason="returns nan")
 def test_gammainc_pair():
-    # gamma(2) * gammainc(2, 1) = lower_incomplete_gamma(2, 1) = 1 - e^-1
-    assert np.isclose(sp.gammainc(2.0, 1.0), (1.0 - np.exp(-1.0)) / sp.gamma(2.0), rtol=1e-12)
+    # gamma(2) * gammainc(2, 1) = lower_incomplete_gamma(2, 1) = 1 - 2*e^-1
+    assert np.isclose(sp.gammainc(2.0, 1.0), 1.0 - 2.0 * np.exp(-1.0), rtol=1e-12)
     assert np.isclose(sp.gammainc(2.0, 1.0) + sp.gammaincc(2.0, 1.0), 1.0)
 
 
-@pytest.mark.xfail(reason="returns nan")
 def test_spherical_jn():
     assert np.isclose(sp.spherical_jn(0, 1.0), np.sin(1.0))
 
 
-@pytest.mark.xfail(reason="returns nan")
 def test_sici():
     si, ci = sp.sici(1.0)
     assert np.isclose(si, 0.9460830703671830, rtol=1e-9)
     assert np.isclose(ci, 0.3374039229009681, rtol=1e-9)
 
 
-@pytest.mark.xfail(reason="returns nan")
 def test_exprel():
     assert np.isclose(sp.exprel(1.0), np.expm1(1.0))
 

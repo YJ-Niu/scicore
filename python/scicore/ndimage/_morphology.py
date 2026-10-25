@@ -2150,7 +2150,10 @@ def distance_transform_bf(input, metric="euclidean", sampling=None,
     struct = generate_binary_structure(tmp1.ndim, tmp1.ndim)
     tmp2 = binary_dilation(tmp1, struct)
     tmp2 = np.logical_xor(tmp1, tmp2)
-    tmp1 = tmp1.astype(np.int8) - tmp2.astype(np.int8)
+    # interior foreground = 1, boundary foreground = 0, background = -1
+    # (the C core treats entries < 0 as the distance sources)
+    tmp1 = (tmp1.astype(np.int8) - tmp2.astype(np.int8)
+            - (1 - tmp1.astype(np.int8)))
     metric = metric.lower()
     if metric == 'euclidean':
         metric = 1

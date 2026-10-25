@@ -73,7 +73,6 @@ def test_eig():
     assert np.allclose(np.sort(np.real(w)), [1.0, 3.0])
 
 
-@pytest.mark.xfail(reason="LAPACK driver syevd not yet ported")
 def test_eigvalsh():
     a = np.array([[2.0, 1.0], [1.0, 3.0]])
     expected = ((5.0 - np.sqrt(5.0)) / 2, (5.0 + np.sqrt(5.0)) / 2)
@@ -108,12 +107,10 @@ def test_lu():
     assert np.allclose(p.T @ l @ u, a)
 
 
-@pytest.mark.xfail(reason="BLAS dnrm2 not ported; rsnumpy norm lacks keepdims kwarg")
 def test_norm_vector():
     assert np.isclose(sla.norm(np.array([3.0, 4.0])), 5.0)
 
 
-@pytest.mark.xfail(reason="rsnumpy norm lacks keepdims kwarg")
 def test_norm_matrix_ords():
     m = np.array([[1.0, 2.0], [3.0, 4.0]])
     assert np.isclose(sla.norm(m, "fro"), np.sqrt(30.0))
@@ -140,7 +137,6 @@ def test_hankel():
                                      [4, 7, 7, 8, 9]]))
 
 
-@pytest.mark.xfail(reason="NameError: name 'scipy' is not defined (leftover upstream import)")
 def test_logm():
     a = np.array([[4.0, 0.0], [0.0, 9.0]])
     assert np.allclose(sla.logm(a), np.array([[np.log(4.0), 0.0], [0.0, np.log(9.0)]]))

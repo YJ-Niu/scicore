@@ -148,7 +148,42 @@ def _not_implemented(name):
     return stub
 
 
+from scicore.linalg.blas import _py_jacobi_eigh  # noqa: E402
+
+
+def _eigh(a1, overwrite_a, eigvals_only, vals_range, lower, vl, vu, il, iu,
+          driver_index, b1=None, overwrite_b=False, type=1):
+    """Pure-rsnumpy standard symmetric eigenproblem (cyclic Jacobi).
+
+    Stacked (..., N, N) input and the generalized problem (b1 is not None)
+    remain unimplemented, matching the pending _flapack port.
+    """
+    if b1 is not None:
+        raise NotImplementedError(_UNIMPLEMENTED.format(name='_eigh',
+                                                        driver='syevd'))
+    a1 = np.asarray(a1, dtype=np.float64)
+    if a1.ndim != 2 or a1.shape[0] != a1.shape[1]:
+        raise NotImplementedError(_UNIMPLEMENTED.format(name='_eigh',
+                                                        driver='syevd'))
+    n = a1.shape[0]
+    M = [[float(a1[i, j]) for j in range(n)] for i in range(n)]
+    w, v = _py_jacobi_eigh(M, compute_v=not eigvals_only)
+    if vals_range == 1:
+        keep = [i for i, x in enumerate(w) if vl <= x <= vu]
+    elif vals_range == 2:
+        keep = list(range(il, iu + 1))
+    else:
+        keep = list(range(n))
+    w = [w[i] for i in keep]
+    m = len(w)
+    if eigvals_only:
+        return np.array(w), None, m, []
+    Z = [[v[i][keep[j]] for j in range(m)] for i in range(n)]
+    return np.array(w), np.array(Z), m, []
+
+
 for _name, _driver in _DRIVERS.items():
-    globals()[_name] = _not_implemented(_name)
+    if _name != '_eigh':
+        globals()[_name] = _not_implemented(_name)
 
 del _name, _driver
