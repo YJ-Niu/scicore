@@ -43,7 +43,6 @@ def test_freqz_frequency_grid_and_dc_gain():
     assert np.all(np.isfinite(h))
 
 
-@pytest.mark.xfail(reason="single-coefficient fast path needs rfft; no backend for rsnumpy.scipy.fft")
 def test_freqz_allpass():
     w, h = ssig.freqz([1.0], [1.0], 8)
     assert np.isclose(w[0], 0.0)
@@ -92,13 +91,11 @@ def test_stft():
     assert Zxx.ndim == 2
 
 
-@pytest.mark.xfail(reason="BackendNotImplementedError: no backend for rsnumpy.scipy.fft")
 def test_hilbert():
     h = ssig.hilbert([1.0, 0.0, -1.0, 0.0])
     assert len(h) == 4
 
 
-@pytest.mark.xfail(reason="BackendNotImplementedError: no backend for rsnumpy.scipy.fft")
 def test_resample():
     out = ssig.resample([1.0, 2.0, 3.0, 4.0], 8)
     assert len(out) == 8
@@ -121,7 +118,6 @@ def test_tf2sos():
     assert sos.shape[1] == 6
 
 
-@pytest.mark.xfail(reason="good_size() takes 1 positional argument but 2 were given")
 def test_fftconvolve():
     c = ssig.fftconvolve([1.0, 2.0, 3.0], [1.0, 1.0])
     assert np.allclose(c, [1.0, 3.0, 5.0, 3.0])

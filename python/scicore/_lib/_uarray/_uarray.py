@@ -35,13 +35,48 @@ class _Function:
         self.default = default
 
     def __call__(self, *args, **kwargs):
-        # Minimal dispatch: try the default implementation if provided,
-        # otherwise raise BackendNotImplementedError.
+        # Dispatch to backends in priority order: context-stack backends
+        # (most recent first, honoring SKIP markers), then global backends
+        # (registration order, try_last entries last).  The first backend
+        # that does not return NotImplemented wins; otherwise fall back to
+        # the default implementation.
+        for backend in self._active_backends():
+            fn = getattr(backend, "__ua_function__", None)
+            if fn is None:
+                continue
+            dom = getattr(backend, "__ua_domain__", None)
+            if dom is not None and not (
+                    dom == self.domain
+                    or self.domain.startswith(dom + ".")
+                    or dom.startswith(self.domain + ".")):
+                continue
+            result = fn(self, args, kwargs)
+            if result is not NotImplemented:
+                return result
         if self.default is not None:
             return self.default(*args, **kwargs)
         raise BackendNotImplementedError(
             f"No backend could handle {self!r}"
         )
+
+    @staticmethod
+    def _active_backends():
+        """Yield candidate backends: context stack first, then globals."""
+        from ._backend import _global_backends  # lazy: avoid circular import
+
+        skipped = set()
+        context = []
+        for entry in reversed(_global_state.stack):
+            if isinstance(entry, tuple) and entry and entry[0] == "SKIP":
+                skipped.add(entry[1])
+            else:
+                context.append(entry)
+        ordered = ([e for e in _global_backends if not e[3]]
+                   + [e for e in _global_backends if e[3]])
+        for entry in context + ordered:
+            backend = entry[0] if isinstance(entry, tuple) else entry
+            if backend not in skipped:
+                yield backend
 
     def add_impl(self, impl):
         self.impls = getattr(self, 'impls', [])
@@ -95,9 +130,10 @@ _BackendState._unpickle = staticmethod(lambda data, reset=False: _unpickle_state
 class _SetBackendContext:
     """Context manager that temporarily sets a backend."""
 
-    def __init__(self, backend, coerce=False):
+    def __init__(self, backend, coerce=False, only=False):
         self.backend = backend
         self.coerce = coerce
+        self.only = only
 
     def __enter__(self):
         _global_state.push(self.backend)

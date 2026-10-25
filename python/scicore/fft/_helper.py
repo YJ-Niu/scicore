@@ -355,3 +355,62 @@ def ifftshift(x, axes=None):
     x = np.asarray(x)
     y = np.fft.ifftshift(x, axes=axes)
     return xp.asarray(y)
+
+
+def fftconvolve(in1, in2, mode='full', axes=None, norm='backward'):
+    """Convolve two N-dimensional arrays using FFT.
+
+    Convolve ``in1`` and ``in2`` using the fast Fourier transform method,
+    with the output size determined by ``mode``.  This delegates to
+    :func:`scicore.signal.fftconvolve`, which implements the same
+    full/same/valid semantics (the import is deferred to avoid an import
+    cycle).
+
+    Parameters
+    ----------
+    in1, in2 : array_like
+        The arrays to convolve.  Must have the same number of dimensions.
+    mode : str {'full', 'valid', 'same'}, optional
+        A string indicating the size of the output (see
+        :func:`scicore.signal.fftconvolve`).  Default is 'full'.
+    axes : int or array_like of ints or None, optional
+        Axes over which to compute the convolution.  The default is over
+        all axes.
+    norm : {"backward", "ortho", "forward"}, optional
+        Normalization mode.  The default ``'backward'`` yields the standard
+        discrete linear convolution; ``'ortho'`` and ``'forward'`` divide
+        the result by the product of the full-convolution lengths along
+        the transformed axes.
+
+    Returns
+    -------
+    out : array
+        An N-dimensional array containing a subset of the discrete linear
+        convolution of ``in1`` with ``in2``.
+
+    Examples
+    --------
+    >>> import rsnumpy as np
+    >>> from scicore.fft import fftconvolve
+    >>> fftconvolve(np.array([1.0, 2.0, 3.0]), np.array([0.0, 1.0, 0.5]))
+    array([0. , 1. , 2.5, 3.5, 1.5])
+    """
+    from scicore.signal import fftconvolve as _signal_fftconvolve
+
+    a = np.asarray(in1)
+    b = np.asarray(in2)
+    s1 = a.shape
+    s2 = b.shape
+    result = _signal_fftconvolve(a, b, mode=mode, axes=axes)
+    if norm in (None, 'backward'):
+        return result
+    if norm not in ('ortho', 'forward'):
+        raise ValueError(f"invalid norm {norm!r}")
+    if axes is None:
+        axes = tuple(range(len(s1)))
+    elif isinstance(axes, int):
+        axes = (axes,)
+    scale = 1.0
+    for ax in axes:
+        scale *= (s1[ax] + s2[ax] - 1)
+    return result / scale

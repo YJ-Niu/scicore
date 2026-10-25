@@ -21,20 +21,17 @@ def test_ifftshift_roundtrip():
 
 # ---------------- not yet ported / broken ----------------
 
-@pytest.mark.xfail(reason="BackendNotImplementedError: no backend for rsnumpy.scipy.fft")
 def test_fft_impulse():
     x = np.zeros(8)
     x[0] = 1.0
     assert np.allclose(sfft.fft(x), np.ones(8))
 
 
-@pytest.mark.xfail(reason="BackendNotImplementedError: no backend for rsnumpy.scipy.fft")
 def test_fft_roundtrip():
     x = np.array([1.0, 2.0, -0.5, 3.0, 0.25, -1.0, 2.0, 0.0])
     assert np.allclose(sfft.ifft(sfft.fft(x)), x)
 
 
-@pytest.mark.xfail(reason="BackendNotImplementedError: no backend for rsnumpy.scipy.fft")
 def test_rfft_roundtrip():
     x = np.array([1.0, 2.0, -0.5, 3.0, 0.25, -1.0])
     X = sfft.rfft(x)
@@ -42,7 +39,6 @@ def test_rfft_roundtrip():
     assert np.allclose(sfft.irfft(X), x)
 
 
-@pytest.mark.xfail(reason="BackendNotImplementedError: no backend for rsnumpy.scipy.fft")
 def test_fftn_2d():
     A = sfft.fftn(np.ones((2, 2)))
     assert np.isclose(A[0, 0], 4.0)
@@ -64,7 +60,7 @@ def test_next_fast_len():
     assert sfft.next_fast_len(93059, real=True) == 93312
 
 
-@pytest.mark.xfail(reason="good_size() takes 1 positional argument but 2 were given")
 def test_fftconvolve():
+    # full convolution: c[3] = a1*b2 + a2*b1 = 2*0.5 + 3*1 = 4.0
     c = sfft.fftconvolve(np.array([1.0, 2.0, 3.0]), np.array([0.0, 1.0, 0.5]), mode="full")
-    assert np.allclose(c, [0.0, 1.0, 2.5, 3.5, 1.5])
+    assert np.allclose(c, [0.0, 1.0, 2.5, 4.0, 1.5])
