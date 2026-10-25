@@ -113,13 +113,13 @@ fn alternating_extremals(
         if errors[candidate] == 0.0 {
             continue;
         }
-        if let Some(&last) = alternating.last() {
-            if errors[last].is_sign_positive() == errors[candidate].is_sign_positive() {
-                if errors[candidate].abs() > errors[last].abs() {
-                    *alternating.last_mut().unwrap() = candidate;
-                }
-                continue;
+        if let Some(&last) = alternating.last()
+            && errors[last].is_sign_positive() == errors[candidate].is_sign_positive()
+        {
+            if errors[candidate].abs() > errors[last].abs() {
+                *alternating.last_mut().unwrap() = candidate;
             }
+            continue;
         }
         alternating.push(candidate);
     }
@@ -453,7 +453,7 @@ pub(super) fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::{design_remez, RemezOptions};
+    use super::{RemezOptions, design_remez};
 
     #[test]
     fn designs_reference_type_two_lowpass_filter() {

@@ -143,11 +143,7 @@ fn epsfac(eps: f64, p: f64) -> f64 {
 
 /// Raise a true distance bound to `d**p` units.
 fn to_pow(d: f64, p: f64) -> f64 {
-    if p.is_infinite() {
-        d
-    } else {
-        d.powf(p)
-    }
+    if p.is_infinite() { d } else { d.powf(p) }
 }
 
 /// The next representable `f64` after `x` toward `+inf` (one ULP up).
@@ -549,7 +545,7 @@ impl KdTree {
                         }
                         neighbors.push((OrdF64(d), idx));
                         if neighbors.len() == kmax {
-                            best_dub = neighbors.peek().map(|t| t.0 .0).unwrap_or(best_dub);
+                            best_dub = neighbors.peek().map(|t| t.0.0).unwrap_or(best_dub);
                         }
                     }
                 }

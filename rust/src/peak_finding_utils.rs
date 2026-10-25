@@ -107,12 +107,13 @@ fn extract_intp_slice<'py>(_py: Python<'py>, obj: &Bound<'py, PyAny>) -> PyResul
 // SAFETY: the caller must ensure the buffer is alive for the lifetime of the
 // returned slice, and that the buffer is C-contiguous with the correct
 // itemsize (guaranteed by `PyBuffer<T>::get`).
+#[allow(unsafe_op_in_unsafe_fn)]
 unsafe fn f64_slice(buf: &PyBuffer<f64>) -> &[f64] {
-    std::slice::from_raw_parts(buf.buf_ptr() as *const f64, buf.item_count())
+    std::slice::from_raw_parts(buf.buf_ptr() as *mut f64, buf.item_count())
 }
-
+#[allow(unsafe_op_in_unsafe_fn)]
 unsafe fn isize_slice(buf: &PyBuffer<isize>) -> &[isize] {
-    std::slice::from_raw_parts(buf.buf_ptr() as *const isize, buf.item_count())
+    std::slice::from_raw_parts(buf.buf_ptr() as *mut isize, buf.item_count())
 }
 
 // ---------------------------------------------------------------------------
