@@ -375,7 +375,7 @@ pub(super) fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::{apply_row, encode_mode, extend_left, extend_right, output_len, Value};
+    use super::{Value, apply_row, encode_mode, extend_left, extend_right, output_len};
 
     fn real_values(values: &[f64]) -> Vec<Value> {
         values.iter().map(|&re| Value { re, im: 0.0 }).collect()
@@ -422,7 +422,9 @@ mod tests {
             .collect::<Vec<_>>();
         assert_eq!(
             &antireflect[..16],
-            &[1.0, 2.0, 3.0, 1.0, -1.0, 0.0, 1.0, 2.0, 3.0, 1.0, -1.0, 0.0, 1.0, 2.0, 3.0, 1.0]
+            &[
+                1.0, 2.0, 3.0, 1.0, -1.0, 0.0, 1.0, 2.0, 3.0, 1.0, -1.0, 0.0, 1.0, 2.0, 3.0, 1.0
+            ]
         );
 
         assert_eq!(extend_left(&x, -1, 1, Value::default()).re, 1.0);

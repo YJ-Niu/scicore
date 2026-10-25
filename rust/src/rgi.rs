@@ -188,7 +188,7 @@ pub fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::{interval, Complex};
+    use super::{Complex, interval};
 
     #[test]
     fn finds_intervals_with_extrapolation_and_nan() {

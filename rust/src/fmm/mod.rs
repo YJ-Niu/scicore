@@ -12,7 +12,7 @@ use pyo3::types::{PyBytes, PyComplex, PyList, PyTuple};
 mod format;
 mod parse;
 
-use parse::{is_stored, parse_array_body, parse_coo_body, parse_header, Val};
+use parse::{Val, is_stored, parse_array_body, parse_coo_body, parse_header};
 
 const VERSION: &str = "1.2.4";
 

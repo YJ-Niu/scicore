@@ -26,7 +26,7 @@ use pyo3::types::PyBytes;
 // the `gemm` family only).
 #[cfg(target_os = "macos")]
 #[link(name = "Accelerate", kind = "framework")]
-extern "C" {
+unsafe extern "C" {
     fn sgemm_(
         transa: *const u8,
         transb: *const u8,
@@ -298,7 +298,7 @@ fn gemm_core<T: Blas>(
         other => {
             return Err(PyValueError::new_err(format!(
                 "invalid trans_a value {other}"
-            )))
+            )));
         }
     };
     let opb: Vec<T> = match trans_b {
@@ -307,7 +307,7 @@ fn gemm_core<T: Blas>(
         other => {
             return Err(PyValueError::new_err(format!(
                 "invalid trans_b value {other}"
-            )))
+            )));
         }
     };
 
@@ -415,7 +415,7 @@ pub(super) fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
 mod tests {
     #[cfg(target_os = "macos")]
     use super::*;
-    use crate::testutil::{max_abs, max_abs_diff, Rng};
+    use crate::testutil::{Rng, max_abs, max_abs_diff};
 
     const SHAPES: [(usize, usize, usize); 10] = [
         (1, 1, 1),

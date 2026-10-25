@@ -210,7 +210,7 @@ pub(super) fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::{convolve_2d, ConvolveOptions, Value};
+    use super::{ConvolveOptions, Value, convolve_2d};
 
     fn real(values: &[f64]) -> Vec<Value> {
         values.iter().map(|&re| Value { re, im: 0.0 }).collect()

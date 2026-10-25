@@ -70,11 +70,7 @@ fn signal_shape(shape: &[usize], data_len: usize) -> PyResult<(usize, usize)> {
 
 fn effective_precision(precision: f64, single: bool) -> f64 {
     if precision <= 0.0 || precision > 1.0 {
-        if single {
-            1e-6
-        } else {
-            1e-11
-        }
+        if single { 1e-6 } else { 1e-11 }
     } else {
         precision
     }
@@ -404,7 +400,7 @@ pub(super) fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::{sepfir2d, symiirorder1, symiirorder2_backward, symiirorder2_forward, Value};
+    use super::{Value, sepfir2d, symiirorder1, symiirorder2_backward, symiirorder2_forward};
 
     fn real(values: &[f64]) -> Vec<Value> {
         values.iter().map(|&re| Value { re, im: 0.0 }).collect()

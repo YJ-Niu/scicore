@@ -156,7 +156,7 @@ pub(super) fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::{linear_filter, Value};
+    use super::{Value, linear_filter};
 
     #[test]
     fn filters_real_input_and_returns_final_state() {

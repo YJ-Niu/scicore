@@ -133,7 +133,7 @@ pub fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::{NolanKernel, HALF_PI, INV_PI};
+    use super::{HALF_PI, INV_PI, NolanKernel};
 
     #[test]
     fn precalculates_alpha_not_one_parameters() {

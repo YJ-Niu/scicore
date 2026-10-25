@@ -372,7 +372,7 @@ pub(super) fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::{correlate_float, correlate_integer, CorrelationOptions};
+    use super::{CorrelationOptions, correlate_float, correlate_integer};
 
     #[test]
     fn computes_full_same_and_valid_multidimensional_correlation() {

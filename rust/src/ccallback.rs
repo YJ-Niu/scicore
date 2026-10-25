@@ -5,7 +5,7 @@
 //! The `test_*` / `plus1_*` helpers of the original module exist solely for
 //! `scipy/_lib/tests/test_ccallback.py` and are not part of the port.
 
-use std::ffi::{c_char, c_double, c_int, c_long, c_short, c_void, CStr, CString};
+use std::ffi::{CStr, CString, c_char, c_double, c_int, c_long, c_short, c_void};
 
 use pyo3::exceptions::PyValueError;
 use pyo3::ffi;

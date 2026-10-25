@@ -15,7 +15,7 @@ use pyo3::types::PyBytes;
 
 #[cfg(target_os = "macos")]
 #[link(name = "Accelerate", kind = "framework")]
-extern "C" {
+unsafe extern "C" {
     fn dgetrf_(
         m: *const i32,
         n: *const i32,
@@ -442,7 +442,7 @@ fn getrs_f64<'py>(
         other => {
             return Err(PyValueError::new_err(format!(
                 "invalid trans value {other}"
-            )))
+            )));
         }
     };
 
@@ -561,7 +561,7 @@ mod tests {
     use super::*;
     #[cfg(target_os = "macos")]
     use crate::testutil::max_abs_diff;
-    use crate::testutil::{max_abs, Rng};
+    use crate::testutil::{Rng, max_abs};
 
     fn random_matrix(rng: &mut Rng, rows: usize, cols: usize) -> Vec<f64> {
         (0..rows * cols).map(|_| rng.f64()).collect()
