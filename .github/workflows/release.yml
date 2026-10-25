@@ -55,7 +55,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # 与 rsnumpy 对齐：覆盖 3.9-3.15，每个 CPython 版本一个 wheel
+        # 与 requires-python = ">=3.12" 对齐：cp39–cp311 wheel pip 装不上，不构建
         # （pyo3 扩展 ABI 绑定解释器版本，逐版本构建）。
         python-version: ["3.12", "3.13", "3.14", "3.15"]
     steps:
@@ -94,7 +94,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # 与 rsnumpy 对齐：覆盖 3.9-3.15，每个 CPython 版本一个 universal2 wheel。
+        # 与 requires-python = ">=3.12" 对齐：cp39–cp311 wheel pip 装不上，不构建。
         python-version: ["3.12", "3.13", "3.14", "3.15"]
     steps:
       - uses: actions/checkout@v7
