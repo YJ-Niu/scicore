@@ -21,6 +21,12 @@ module-name = "scicore._scicore_rs"
 name = "scirs"
 version = "0.1.5"
 license = { file = "LICENSE.txt" }
+# PEP 639: without an explicit list maturin auto-detects every LICENSE* file
+# in the project root and advertises it as License-File metadata. That pulls
+# in LICENSES_bundled.txt (SciPy's bundled-third-party-libs list), which is
+# not copied into the sdist, and PyPI rejects the sdist with a 400
+# ("License-File ... does not exist"). Pin the list to the real license.
+license-files = ["LICENSE.txt"]
 description = "Fundamental algorithms for scientific computing in Python, built on rsnumpy"
 authors = [
     { name = "YJ-Niu" },
