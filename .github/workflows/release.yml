@@ -19,7 +19,7 @@ jobs:
   # manylinux 容器内含全部 CPython，--find-interpreter 自动为每个版本各产出一个
   # wheel，auditwheel 重标记为 manylinux（PyPI 拒收普通 linux_* 平台标签）。
   linux:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
@@ -57,7 +57,7 @@ jobs:
       matrix:
         # 与 rsnumpy 对齐：覆盖 3.9-3.15，每个 CPython 版本一个 wheel
         # （pyo3 扩展 ABI 绑定解释器版本，逐版本构建）。
-        python-version: ["3.9", "3.10", "3.11", "3.12", "3.13", "3.14", "3.15"]
+        python-version: ["3.12", "3.13", "3.14", "3.15"]
     steps:
       - uses: actions/checkout@v7
 
@@ -95,7 +95,7 @@ jobs:
       fail-fast: false
       matrix:
         # 与 rsnumpy 对齐：覆盖 3.9-3.15，每个 CPython 版本一个 universal2 wheel。
-        python-version: ["3.9", "3.10", "3.11", "3.12", "3.13", "3.14", "3.15"]
+        python-version: ["3.12", "3.13", "3.14", "3.15"]
     steps:
       - uses: actions/checkout@v7
 
@@ -127,7 +127,7 @@ jobs:
   # ---------------- 源码分发（sdist）----------------
   # 当某平台/版本无预编译 wheel 时，pip 可用 sdist 从源码构建（需目标机器有 Rust）。
   sdist:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
 
@@ -158,7 +158,7 @@ jobs:
   # 正好用来先验证各平台 wheel 的构建结果。
   test:
     name: Verify release artifact
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: [linux, windows, macos, sdist]
     steps:
       - uses: actions/checkout@v7
@@ -197,7 +197,7 @@ jobs:
   # ---------------- 发布到 PyPI（仅标签 / Release 触发）----------------
   publish:
     name: Publish to PyPI
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: [linux, windows, macos, sdist, test]
     if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'release'
     steps:
