@@ -47,26 +47,24 @@ def test_sqrtm_diagonal():
 
 # ---------------- not yet ported / broken ----------------
 
-@pytest.mark.xfail(reason="LAPACK driver getrs not yet ported")
 def test_solve():
     a = np.array([[4.0, 3.0], [6.0, 3.0]])
+    # hand-verified: 4x1+3x2=10, 6x1+3x2=12  ->  x1=1, x2=2
     x = sla.solve(a, np.array([10.0, 12.0]))
-    assert np.allclose(x, [2.0, -2.0])
+    assert np.allclose(x, [1.0, 2.0])
 
 
-@pytest.mark.xfail(reason="LAPACK driver getri not yet ported")
 def test_inv():
     a = np.array([[4.0, 3.0], [6.0, 3.0]])
     assert np.allclose(a @ sla.inv(a), np.eye(2))
 
 
-@pytest.mark.xfail(reason="LAPACK driver getrf not yet ported")
 def test_det():
     a = np.array([[1.0, 2.0, 3.0], [0.0, 1.0, 4.0], [5.0, 6.0, 0.0]])
-    assert np.isclose(sla.det(a), -4.0)
+    # hand-verified: 1*(0-24) - 2*(0-20) + 3*(0-5) = -24 + 40 - 15 = 1
+    assert np.isclose(sla.det(a), 1.0)
 
 
-@pytest.mark.xfail(reason="LAPACK driver geev not yet ported")
 def test_eig():
     a = np.array([[2.0, 1.0], [1.0, 2.0]])
     w, v = sla.eig(a)
@@ -79,28 +77,27 @@ def test_eigvalsh():
     assert np.allclose(np.sort(sla.eigvalsh(a)), expected)
 
 
-@pytest.mark.xfail(reason="LAPACK driver gesdd not yet ported")
 def test_svd_roundtrip():
     a = np.array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0], [7.0, 8.0, 10.0]])
     u, s, vt = sla.svd(a)
     assert np.allclose(u @ np.diag(s) @ vt, a)
 
 
-@pytest.mark.xfail(reason="LAPACK driver potrf not yet ported")
 def test_cholesky():
     a = np.array([[4.0, 2.0], [2.0, 3.0]])
-    l = sla.cholesky(a)
-    assert np.allclose(l @ l.T, a)
+    # default lower=False returns the upper factor U with A = U.T @ U
+    u = sla.cholesky(a)
+    assert np.allclose(u.T @ u, a)
 
 
-@pytest.mark.xfail(reason="LAPACK driver gelsd not yet ported")
 def test_lstsq():
     a = np.array([[1.0, 2.0], [2.0, 4.0], [3.0, 6.0]])
+    # rank-1 system with exact solutions x1+2x2=1; LAPACK's gelsd returns
+    # the minimum-2-norm solution [0.2, 0.4]
     x, *_ = sla.lstsq(a, np.array([1.0, 2.0, 3.0]))
-    assert np.allclose(x, [0.0, 0.5], atol=1e-10)
+    assert np.allclose(x, [0.2, 0.4], atol=1e-10)
 
 
-@pytest.mark.xfail(reason="LAPACK driver getrf not yet ported")
 def test_lu():
     a = np.array([[1.0, 2.0], [3.0, 4.0]])
     p, l, u = sla.lu(a)
