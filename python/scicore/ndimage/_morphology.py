@@ -240,7 +240,7 @@ def _binary_erosion(input, structure, iterations, mask, output,
 
     if structure.ndim != input.ndim:
         raise RuntimeError('structure and input must have same dimensionality')
-    if not structure.flags.contiguous:
+    if not structure.flags.c_contiguous:
         structure = structure.copy()
     if structure.size < 1:
         raise RuntimeError('structure must not be empty')
@@ -277,7 +277,7 @@ def _binary_erosion(input, structure, iterations, mask, output,
                 origin[ii] -= 1
         if mask is not None:
             mask = np.asarray(mask, dtype=np.int8)
-        if not structure.flags.contiguous:
+        if not structure.flags.c_contiguous:
             structure = structure.copy()
         _nd_image.binary_erosion2(output, structure, mask, iterations - 1,
                                   origin, invert, coordinate_list)
@@ -2163,7 +2163,7 @@ def distance_transform_bf(input, metric="euclidean", sampling=None,
     if sampling is not None:
         sampling = _ni_support._normalize_sequence(sampling, tmp1.ndim)
         sampling = np.asarray(sampling, dtype=np.float64)
-        if not sampling.flags.contiguous:
+        if not sampling.flags.c_contiguous:
             sampling = sampling.copy()
     if return_indices:
         ft = np.zeros(tmp1.shape, dtype=np.int32)
@@ -2376,7 +2376,7 @@ def distance_transform_cdt(input, metric='chessboard', return_distances=True,
             if s != 3:
                 raise ValueError('metric sizes must be equal to 3')
 
-    if not metric.flags.contiguous:
+    if not metric.flags.c_contiguous:
         metric = metric.copy()
     if dt_inplace:
         if distances.dtype.type != np.int32:
@@ -2569,7 +2569,7 @@ def distance_transform_edt(input, sampling=None, return_distances=True,
     if sampling is not None:
         sampling = _ni_support._normalize_sequence(sampling, input.ndim)
         sampling = np.asarray(sampling, dtype=np.float64)
-        if not sampling.flags.contiguous:
+        if not sampling.flags.c_contiguous:
             sampling = sampling.copy()
 
     if ft_inplace:

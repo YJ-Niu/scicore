@@ -84,8 +84,10 @@ def _get_output(output, input, shape=None, complex_output=False):
         else:
             complex_type = np.promote_types(input.dtype, np.complex64)
             output = np.zeros(shape, dtype=complex_type)
-    elif isinstance(output, type | np.dtype):
-        # Classes (like `np.float32`) and dtypes are interpreted as dtype
+    elif isinstance(output, type) or (hasattr(output, "kind") and hasattr(output, "name")):
+        # Classes (like `np.float32`) and dtype instances are interpreted as
+        # dtype.  (rsnumpy's ``np.dtype`` is a function, so the
+        # ``type | np.dtype`` union form is not usable here.)
         if complex_output and np.dtype(output).kind != 'c':
             warnings.warn("promoting specified output dtype to complex", stacklevel=3)
             output = np.promote_types(output, np.complex64)

@@ -43,10 +43,15 @@ def csr_matvecs(indptr, indices, data, x, y):
     return y
 
 
-def csr_todense(indptr, indices, data, shape, out):
+def csr_todense(M, N, indptr, indices, data, out):
+    """Scipy-compatible ``csr_todense``: scatter CSR rows into a 2-D buffer.
+
+    ``out`` is a 2-D array (C-contiguous, possibly a transposed view);
+    logical entry ``(i, j)`` receives ``data[j]`` for each stored column
+    ``j`` of row ``i``.
+    """
     out[:] = 0.0
-    m, n = shape
-    for i in range(m):
+    for i in range(M):
         for j in range(indptr[i], indptr[i + 1]):
             out[i, indices[j]] = data[j]
     return out
@@ -116,8 +121,24 @@ def csr_eliminate_zeros(M, N, indptr, indices, data):
 
 # ----- COO -----
 
-def coo_tocsr(row, col, data, shape):
-    raise NotImplementedError("coo_tocsr not yet ported")
+def coo_tocsr(M, N, nnz, major, minor, data, indptr, indices, out_data):
+    """Scipy-compatible ``coo_tocsr``: fill pre-allocated CSR buffers.
+
+    Pure rsnumpy replacement for the C ``coo_tocsr``.  Entries are
+    scattered in input order (stable within each row) and duplicate
+    coordinates are preserved, mirroring the C implementation.
+    """
+    counts = np.zeros(M, dtype=np.intp)
+    counts[major.astype(np.intp)] += 1
+    indptr[0] = 0
+    indptr[1:] = np.cumsum(counts)
+    pos = indptr[0:M].copy()
+    for k in range(nnz):
+        r = int(major[k])
+        p = int(pos[r])
+        pos[r] = p + 1
+        indices[p] = int(minor[k])
+        out_data[p] = data[k]
 
 
 def coo_todense(M, N, nnz, row, col, data, out, fortran):

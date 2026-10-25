@@ -99,7 +99,10 @@ def _broadcast_shapes(shapes, axis=None):
             raise AxisError("`axis` must contain only distinct elements")
 
         removed_shapes = new_shapes[:, axis]
-        new_shapes = np.delete(new_shapes, axis, axis=1)
+        # rsnumpy's np.delete rejects float-valued index arrays (its
+        # np.atleast_1d/int round-trips can reintroduce floats), so pass
+        # plain Python ints.
+        new_shapes = np.delete(new_shapes, [int(a) for a in axis], axis=1)
 
     # If arrays are broadcastable, shape elements that are 1 may be replaced
     # with a corresponding non-1 shape element. Assuming arrays are
@@ -158,7 +161,7 @@ def _broadcast_shapes_remove_axis(shapes, axis=None):
     shapes = _broadcast_shapes(shapes, axis)
     shape = shapes[0]
     if axis is not None:
-        shape = np.delete(shape, axis)
+        shape = np.delete(shape, [int(a) for a in np.atleast_1d(axis)])
     return tuple(shape)
 
 

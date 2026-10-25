@@ -76,7 +76,7 @@ def toeplitz(c, r=None):
     """
     c = np.atleast_1d(c)
     if r is None:
-        r = c.conjugate()
+        r = np.conjugate(c)
     else:
         r = np.atleast_1d(r)
     return _toeplitz(c, r)

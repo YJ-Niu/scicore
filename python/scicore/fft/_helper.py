@@ -190,6 +190,11 @@ def fftfreq(n, d=1.0, *, xp=None, device=None):
 
     """
     xp = np if xp is None else xp
+    if device is None:
+        # rsnumpy's fft.fftfreq does not accept the device keyword.
+        if hasattr(xp, 'fft'):
+            return xp.fft.fftfreq(n, d=d)
+        return np.fft.fftfreq(n, d=d)
     if hasattr(xp, 'fft'):
         return xp.fft.fftfreq(n, d=d, device=device)
     return np.fft.fftfreq(n, d=d, device=device)
@@ -246,6 +251,11 @@ def rfftfreq(n, d=1.0, *, xp=None, device=None):
 
     """
     xp = np if xp is None else xp
+    if device is None:
+        # rsnumpy's fft.rfftfreq does not accept the device keyword.
+        if hasattr(xp, 'fft'):
+            return xp.fft.rfftfreq(n, d=d)
+        return np.fft.rfftfreq(n, d=d)
     if hasattr(xp, 'fft'):
         return xp.fft.rfftfreq(n, d=d, device=device)
     return np.fft.rfftfreq(n, d=d, device=device)

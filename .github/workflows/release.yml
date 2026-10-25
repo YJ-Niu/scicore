@@ -217,4 +217,6 @@ jobs:
           TWINE_PASSWORD: ${{ secrets.YJ_NIU }}
         run: |
           pip install twine
-          twine upload --non-interactive --skip-existing dist/*
+          # --verbose: 打印 PyPI 的完整响应体（twine 会隐藏 token），
+          # 否则 400 之类错误只显示 "Bad Request"，无法定位原因。
+          twine upload --verbose --non-interactive --skip-existing dist/*

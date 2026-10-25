@@ -637,13 +637,13 @@ def affine_transform(input, matrix, offset=0.0, output_shape=None,
         raise RuntimeError('affine matrix has wrong number of rows')
     if matrix.ndim == 2 and matrix.shape[1] != output.ndim:
         raise RuntimeError('affine matrix has wrong number of columns')
-    if not matrix.flags.contiguous:
+    if not matrix.flags.c_contiguous:
         matrix = matrix.copy()
     offset = _ni_support._normalize_sequence(offset, input.ndim)
     offset = np.asarray(offset, dtype=np.float64)
     if offset.ndim != 1 or offset.shape[0] < 1:
         raise RuntimeError('no proper offset provided')
-    if not offset.flags.contiguous:
+    if not offset.flags.c_contiguous:
         offset = offset.copy()
     if matrix.ndim == 1:
         _nd_image.zoom_shift(filtered, matrix, offset/matrix, output, order,
@@ -753,7 +753,7 @@ def shift(input, shift, output=None, order=3, mode='constant', cval=0.0,
     shift = _ni_support._normalize_sequence(shift, input.ndim)
     shift = [-ii for ii in shift]
     shift = np.asarray(shift, dtype=np.float64)
-    if not shift.flags.contiguous:
+    if not shift.flags.c_contiguous:
         shift = shift.copy()
     _nd_image.zoom_shift(filtered, None, shift, output, order, mode, cval,
                          npad, False)

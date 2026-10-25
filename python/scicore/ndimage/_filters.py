@@ -610,7 +610,7 @@ def correlate1d(input, weights, axis=-1, output=None, mode="reflect",
     weights = np.asarray(weights, dtype=np.float64)
     if weights.ndim != 1 or weights.shape[0] < 1:
         raise RuntimeError('no filter weights given')
-    if not weights.flags.contiguous:
+    if not weights.flags.c_contiguous:
         weights = weights.copy()
     axis = normalize_axis_index(axis, input.ndim)
     if _invalid_origin(origin, len(weights)):
@@ -1303,7 +1303,7 @@ def _correlate_or_convolve(input, weights, output, mode, cval, origin,
                              '-(weights.shape[k] // 2) <= origin[k] <= '
                              '(weights.shape[k]-1) // 2')
 
-    if not weights.flags.contiguous:
+    if not weights.flags.c_contiguous:
         weights = weights.copy()
     output = _ni_support._get_output(output, input)
     temp_needed = np.may_share_memory(input, output)
@@ -1815,7 +1815,7 @@ def _min_or_max_filter(input, size, footprint, structure, output, mode,
         for origin, lenf in zip(origins, fshape):
             if (lenf // 2 + origin < 0) or (lenf // 2 + origin >= lenf):
                 raise ValueError("invalid origin")
-        if not footprint.flags.contiguous:
+        if not footprint.flags.c_contiguous:
             footprint = footprint.copy()
         if structure is not None:
             if len(structure.shape) != num_axes:
@@ -1825,7 +1825,7 @@ def _min_or_max_filter(input, size, footprint, structure, output, mode,
                     structure,
                     tuple(ax for ax in range(structure.ndim) if ax not in axes)
                 )
-            if not structure.flags.contiguous:
+            if not structure.flags.c_contiguous:
                 structure = structure.copy()
         if not isinstance(mode, str) and isinstance(mode, Iterable):
             raise RuntimeError(
@@ -1969,7 +1969,7 @@ def _rank_filter(input, rank, size=None, footprint=None, output=None,
     for origin, lenf in zip(origins, fshape):
         if (lenf // 2 + origin < 0) or (lenf // 2 + origin >= lenf):
             raise ValueError('invalid origin')
-    if not footprint.flags.contiguous:
+    if not footprint.flags.c_contiguous:
         footprint = footprint.copy()
     filter_size = np.where(footprint, 1, 0).sum()
     if operation == 'median':
@@ -2450,7 +2450,7 @@ def generic_filter(input, function, size=None, footprint=None,
     for origin, lenf in zip(origins, fshape):
         if (lenf // 2 + origin < 0) or (lenf // 2 + origin >= lenf):
             raise ValueError('invalid origin')
-    if not footprint.flags.contiguous:
+    if not footprint.flags.c_contiguous:
         footprint = footprint.copy()
     output = _ni_support._get_output(output, input)
 

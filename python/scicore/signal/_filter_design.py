@@ -2679,7 +2679,7 @@ def iirdesign(wp, ws, gpass, gstop, analog=False, ftype='ellip', output='ba',
                      ftype=ftype, output=output, fs=fs)
 
 
-def iirfilter(N, Wn, rp=None, rs=None, btype='bandpass', analog=False,
+def iirfilter(N, Wn, rp=None, rs=None, btype='lowpass', analog=False,
               ftype='butter', output='ba', fs=None):
     """
     IIR digital and analog filter design given order and critical points.

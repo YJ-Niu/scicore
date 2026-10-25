@@ -51,9 +51,9 @@ def test_fortran_file_roundtrip():
     with tempfile.TemporaryDirectory() as td:
         fp = os.path.join(td, "t.dat")
         with sio.FortranFile(fp, "w") as f:
-            f.write(np.array([1.0, 2.0, 3.0]))
+            f.write_record(np.array([1.0, 2.0, 3.0]))
         with sio.FortranFile(fp, "r") as f:
-            out = f.read(3)
+            out = f.read_reals(1)[0]
         assert np.allclose(out, [1.0, 2.0, 3.0])
 
 

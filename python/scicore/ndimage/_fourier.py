@@ -119,7 +119,7 @@ def fourier_gaussian(input, sigma, n=-1, axis=-1, output=None):
     axis = normalize_axis_index(axis, input.ndim)
     sigmas = _ni_support._normalize_sequence(sigma, input.ndim)
     sigmas = np.asarray(sigmas, dtype=np.float64)
-    if not sigmas.flags.contiguous:
+    if not sigmas.flags.c_contiguous:
         sigmas = sigmas.copy()
 
     _nd_image.fourier_filter(input, sigmas, n, axis, output, 0)
@@ -177,7 +177,7 @@ def fourier_uniform(input, size, n=-1, axis=-1, output=None):
     axis = normalize_axis_index(axis, input.ndim)
     sizes = _ni_support._normalize_sequence(size, input.ndim)
     sizes = np.asarray(sizes, dtype=np.float64)
-    if not sizes.flags.contiguous:
+    if not sizes.flags.c_contiguous:
         sizes = sizes.copy()
     _nd_image.fourier_filter(input, sizes, n, axis, output, 1)
     return output
@@ -244,7 +244,7 @@ def fourier_ellipsoid(input, size, n=-1, axis=-1, output=None):
     axis = normalize_axis_index(axis, input.ndim)
     sizes = _ni_support._normalize_sequence(size, input.ndim)
     sizes = np.asarray(sizes, dtype=np.float64)
-    if not sizes.flags.contiguous:
+    if not sizes.flags.c_contiguous:
         sizes = sizes.copy()
     _nd_image.fourier_filter(input, sizes, n, axis, output, 2)
     return output
@@ -300,7 +300,7 @@ def fourier_shift(input, shift, n=-1, axis=-1, output=None):
     axis = normalize_axis_index(axis, input.ndim)
     shifts = _ni_support._normalize_sequence(shift, input.ndim)
     shifts = np.asarray(shifts, dtype=np.float64)
-    if not shifts.flags.contiguous:
+    if not shifts.flags.c_contiguous:
         shifts = shifts.copy()
     _nd_image.fourier_shift(input, shifts, n, axis, output)
     return output
