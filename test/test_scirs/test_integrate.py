@@ -54,7 +54,6 @@ def test_odeint():
     assert np.allclose(out[-1], [np.cos(1.0), np.sin(1.0)], atol=1e-6)
 
 
-@pytest.mark.xfail(reason="romb() got unexpected keyword 'x' (only dx supported)")
 def test_romb():
     # Romberg on y=[1,2,1], dx=1: exact for the quadratic => 10/3
     assert np.isclose(sint.romb(np.array([1.0, 2.0, 1.0]), dx=1.0), 10.0 / 3.0, rtol=1e-10)

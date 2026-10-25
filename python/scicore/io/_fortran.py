@@ -132,7 +132,10 @@ class FortranFile:
         elif len(b) < n:
             raise FortranFormattingError(
                 "End of file in the middle of the record size")
-        return int(np.frombuffer(b, dtype=self._header_dtype, count=1)[0])
+        # rsnumpy's frombuffer(count=...) path panics in its byte-decode
+        # helper for short buffers (native abort); b is exactly n bytes, so
+        # the count argument is unnecessary here.
+        return int(np.frombuffer(b, dtype=self._header_dtype)[0])
 
     def write_record(self, *items):
         """
@@ -162,10 +165,11 @@ class FortranFile:
 
         nb = np.array([total_size], dtype=self._header_dtype)
 
-        nb.tofile(self._fp)
+        # rsnumpy's ndarray has no tofile(); write the raw bytes directly.
+        self._fp.write(nb.tobytes())
         for item in items:
-            item.tofile(self._fp)
-        nb.tofile(self._fp)
+            self._fp.write(item.tobytes())
+        self._fp.write(nb.tobytes())
 
     def read_record(self, *dtypes, dtype=None):
         """

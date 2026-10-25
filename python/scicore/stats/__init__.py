@@ -649,7 +649,7 @@ def __getattr__(name):
    # only `stats` is imported.
    if name == 'mstats':
       import importlib
-      return importlib.import_module("scipy.stats.mstats")
+      return importlib.import_module("scicore.stats.mstats")
    try:
       return globals()[name]
    except KeyError:

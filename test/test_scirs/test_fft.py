@@ -48,7 +48,6 @@ def test_fftn_2d():
     assert np.isclose(A[0, 0], 4.0)
 
 
-@pytest.mark.xfail(reason="TypeError: fftfreq() got unexpected keyword 'device'")
 def test_fftfreq():
     f = sfft.fftfreq(8)
     assert np.allclose(f, [0, 1 / 8, 2 / 8, 3 / 8, -4 / 8, -3 / 8, -2 / 8, -1 / 8])

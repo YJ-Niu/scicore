@@ -286,7 +286,7 @@ def spsolve(A, b, permc_spec=None, use_umfpack=True):
             indices = A.indices.astype(np.intc, copy=False)
             indptr = A.indptr.astype(np.intc, copy=False)
             options = dict(ColPerm=permc_spec)
-            x, info = _superlu.gssv(N, A.nnz, A.data, indices, indptr,
+            x, info = _superlu.gssv(N, A.nnz, A.data, indptr, indices,
                                     b, flag, options=options)
             if info == 0:
                 pass  # Success

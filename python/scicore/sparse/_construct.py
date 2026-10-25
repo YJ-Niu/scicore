@@ -420,7 +420,9 @@ def diags_array(diagonals, /, *, offsets=0, shape=None, format=None, dtype=None)
     else:
         diagonals = list(map(np.atleast_1d, diagonals))
 
-    offsets = np.atleast_1d(offsets)
+    # rsnumpy's np.atleast_1d(int) yields a float64 array, which breaks the
+    # integer indexing below; normalize to a plain list of ints.
+    offsets = [int(o) for o in np.atleast_1d(offsets)]
 
     # Basic check
     if len(diagonals) != len(offsets):

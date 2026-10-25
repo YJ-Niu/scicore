@@ -218,12 +218,15 @@ class MatFile5Reader(MatFileReader):
     def read_file_header(self):
         ''' Read in mat 5 file header '''
         hdict = {}
-        hdr_dtype = MDTYPES[self.byte_order]['dtypes']['file_header']
-        hdr = read_dtype(self.mat_stream, hdr_dtype)
-        hdict['__header__'] = hdr['description'].item().strip(b' \t\n\000')
-        v_major = hdr['version'] >> 8
-        v_minor = hdr['version'] & 0xFF
-        hdict['__version__'] = f'{v_major}.{v_minor}'
+        # 128-byte header: S116 description + i8 subsystem_offset + u2
+        # version + S2 endian test. Parsed with struct — rsnumpy cannot
+        # index structured (void) arrays by field name.
+        raw = self.mat_stream.read(128)
+        if len(raw) != 128:
+            raise MatReadError("Mat file appears to be truncated")
+        hdict['__header__'] = raw[:116].rstrip(b' \t\n\x00')
+        version = struct.unpack(self.byte_order + 'H', raw[124:126])[0]
+        hdict['__version__'] = f'{version >> 8}.{version & 0xFF}'
         return hdict
 
     def initialize_read(self):
@@ -517,8 +520,10 @@ NDT_ARRAY_FLAGS = MDTYPES[native_code]['dtypes']['array_flags']
 
 class VarWriter5:
     ''' Generic matlab matrix writing class '''
-    mat_tag = np.zeros((), NDT_TAG_FULL)
-    mat_tag['mdtype'] = miMATRIX
+    # miMATRIX full tag: 8 bytes (u4 mdtype + u4 byte_count; byte_count is
+    # filled in by update_matrix_tag). rsnumpy's tobytes cannot encode
+    # void/structured dtypes, so the tag bytes are built directly.
+    mat_tag = struct.pack(native_code + 'II', miMATRIX, 0)
 
     def __init__(self, file_writer):
         self.file_stream = file_writer.file_stream
@@ -549,20 +554,25 @@ class VarWriter5:
             self.write_regular_element(arr, mdtype, byte_count)
 
     def write_smalldata_element(self, arr, mdtype, byte_count):
-        # write tag with embedded data
-        tag = np.zeros((), NDT_TAG_SMALL)
-        tag['byte_count_mdtype'] = (byte_count << 16) + mdtype
-        # if arr.tobytes is < 4, the element will be zero-padded as needed.
-        tag['data'] = arr.tobytes(order='F')
-        self.write_bytes(tag)
+        # write tag with embedded data. Small tag: u4 (byte_count << 16 |
+        # mdtype) + 4 data bytes (zero-padded as needed).
+        # byte_count == 0 would be indistinguishable from a full tag on read
+        # (word >> 16 == 0), so it is written as a full tag instead.
+        if byte_count == 0:
+            self.write_regular_element(arr, mdtype, 0)
+            return
+        data = arr.tobytes(order='F')[:4]
+        self.file_stream.write(struct.pack(
+            native_code + 'I', (byte_count << 16) + mdtype))
+        self.file_stream.write(data.ljust(4, b'\x00'))
 
     def write_regular_element(self, arr, mdtype, byte_count):
-        # write tag, data
-        tag = np.zeros((), NDT_TAG_FULL)
-        tag['mdtype'] = mdtype
-        tag['byte_count'] = byte_count
-        self.write_bytes(tag)
-        self.write_bytes(arr)
+        # write tag, data. This port's full tag is 8 bytes (u4 mdtype +
+        # u4 byte_count, no data_pos): the data follows immediately and is
+        # padded to the next 64-bit boundary.
+        self.file_stream.write(struct.pack(native_code + 'II', mdtype,
+                                           byte_count))
+        self.file_stream.write(arr.tobytes(order='F'))
         # pad to next 64-bit boundary
         bc_mod_8 = byte_count % 8
         if bc_mod_8:
@@ -590,24 +600,50 @@ class VarWriter5:
         is_global = self._var_is_global
         # initialize the top-level matrix tag, store position
         self._mat_tag_pos = self.file_stream.tell()
-        self.write_bytes(self.mat_tag)
-        # write array flags (complex, global, logical, class, nzmax)
-        af = np.zeros((), NDT_ARRAY_FLAGS)
-        af['data_type'] = miUINT32
-        af['byte_count'] = 8
+        self.file_stream.write(self.mat_tag)
+        # write array flags (complex, global, logical, class, nzmax) as 16
+        # raw bytes: u4 data_type, u4 byte_count (size of the dims element),
+        # u4 flags_class, u4 nzmax.
         flags = is_complex << 3 | is_global << 2 | is_logical << 1
-        af['flags_class'] = mclass | flags << 8
-        af['nzmax'] = nzmax
-        self.write_bytes(af)
-        # shape
+        dims_bytes = 0 if shape is None else 4 * len(shape)
+        self.file_stream.write(struct.pack(
+            native_code + 'IIII', miUINT32, dims_bytes,
+            mclass | flags << 8, nzmax))
+        # shape (dims element): full tag (miUINT32, 4*ndim) + dims as uint32,
+        # padded to 8 bytes. Written directly with struct — rsnumpy's
+        # np.array(tuple, dtype='i4') mis-types small integer tuples.
         if shape is not None:
-            self.write_element(np.array(shape, dtype='i4'))
-        # write name
-        name = np.asarray(name)
-        if name == '' or name == b'':  # empty string zero-terminated
-            self.write_smalldata_element(name, miINT8, 0)
+            ndim = len(shape)
+            dims_data = struct.pack(native_code + f'{ndim}I', *shape)
+            self.file_stream.write(struct.pack(
+                native_code + 'II', miUINT32, dims_bytes))
+            self.file_stream.write(dims_data)
+            bc_mod_8 = dims_bytes % 8
+            if bc_mod_8:
+                self.file_stream.write(b'\x00' * (8-bc_mod_8))
+        # write name as an miINT8 element of the name bytes
+        if isinstance(name, str):
+            name_bytes = name.encode('latin-1')
+        elif isinstance(name, (bytes, bytearray)):
+            name_bytes = bytes(name)
         else:
-            self.write_element(name, miINT8)
+            name_bytes = bytes(name)
+        if len(name_bytes) == 0:
+            # empty name: full tag (miINT8, 0)
+            self.file_stream.write(struct.pack(native_code + 'II', miINT8, 0))
+        elif len(name_bytes) <= 4:
+            # small tag
+            self.file_stream.write(struct.pack(
+                native_code + 'I', (len(name_bytes) << 16) + miINT8))
+            self.file_stream.write(name_bytes.ljust(4, b'\x00'))
+        else:
+            # full tag
+            self.file_stream.write(struct.pack(
+                native_code + 'II', miINT8, len(name_bytes)))
+            self.file_stream.write(name_bytes)
+            bc_mod_8 = len(name_bytes) % 8
+            if bc_mod_8:
+                self.file_stream.write(b'\x00' * (8-bc_mod_8))
         # reset the one-shot store to defaults
         self._var_name = ''
         self._var_is_global = False
@@ -619,8 +655,8 @@ class VarWriter5:
         if byte_count >= 2**32:
             raise MatWriteError("Matrix too large to save with Matlab "
                                 "5 format")
-        self.mat_tag['byte_count'] = byte_count
-        self.write_bytes(self.mat_tag)
+        self.file_stream.write(struct.pack(native_code + 'II', miMATRIX,
+                                           byte_count))
         self.file_stream.seek(curr_pos)
 
     def write_top(self, arr, name, is_global):
@@ -914,10 +950,9 @@ class MatFile5Writer:
                 self._matrix_writer.file_stream = stream
                 self._matrix_writer.write_top(var, name.encode('latin1'), is_global)
                 out_str = zlib.compress(stream.getvalue())
-                tag = np.empty((), NDT_TAG_FULL)
-                tag['mdtype'] = miCOMPRESSED
-                tag['byte_count'] = len(out_str)
-                self.file_stream.write(tag.tobytes())
+                self.file_stream.write(struct.pack(native_code + 'II',
+                                                   miCOMPRESSED,
+                                                   len(out_str)))
                 self.file_stream.write(out_str)
             else:  # not compressing
                 self._matrix_writer.write_top(var, name.encode('latin1'), is_global)

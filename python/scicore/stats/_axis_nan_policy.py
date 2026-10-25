@@ -67,61 +67,79 @@ def _broadcast_shapes(shapes, axis=None):
     if not shapes:
         return shapes
 
-    # input validation
+    # input validation.  rsnumpy's ``atleast_1d``/``astype`` turn integer
+    # axes into float arrays (which later break ``np.insert`` and the
+    # slice-assignments below), so work in pure Python ints from here on.
     if axis is not None:
-        axis = np.atleast_1d(axis)
         message = '`axis` must be an integer, a tuple of integers, or `None`.'
+        axis_vals = list(axis) if isinstance(axis, (list, tuple)) else [axis]
         try:
-            with np.errstate(invalid='ignore'):
-                axis_int = axis.astype(int)
-        except ValueError as e:
-            raise AxisError(message) from e
-        if not np.array_equal(axis_int, axis):
+            axis_vals = [float(v) for v in axis_vals]
+        except (TypeError, ValueError):
             raise AxisError(message)
-        axis = axis_int
+        if any(not v.is_integer() for v in axis_vals):
+            raise AxisError(message)
+        axis = [int(v) for v in axis_vals]
 
     # First, ensure all shapes have same number of dimensions by prepending 1s.
     n_dims = max([len(shape) for shape in shapes])
-    new_shapes = np.ones((len(shapes), n_dims), dtype=int)
-    for row, shape in zip(new_shapes, shapes):
-        row[len(row)-len(shape):] = shape  # can't use negative indices (-0:)
+    new_shapes = []
+    for shape in shapes:
+        row = [1] * n_dims
+        for i, s in enumerate(shape):
+            row[n_dims - len(shape) + i] = int(s)  # can't use negative indices (-0:)
+        new_shapes.append(row)
 
     # Remove the shape elements of the axes to be ignored, but remember them.
+    removed_shapes = None
     if axis is not None:
-        axis[axis < 0] = n_dims + axis[axis < 0]
-        axis = np.sort(axis)
+        axis = [n_dims + a if a < 0 else a for a in axis]
+        axis = sorted(axis)
         if axis[-1] >= n_dims or axis[0] < 0:
             message = (f"`axis` is out of bounds "
                        f"for array of dimension {n_dims}")
             raise AxisError(message)
 
-        if len(np.unique(axis)) != len(axis):
+        if len(set(axis)) != len(axis):
             raise AxisError("`axis` must contain only distinct elements")
 
-        removed_shapes = new_shapes[:, axis]
-        # rsnumpy's np.delete rejects float-valued index arrays (its
-        # np.atleast_1d/int round-trips can reintroduce floats), so pass
-        # plain Python ints.
-        new_shapes = np.delete(new_shapes, [int(a) for a in axis], axis=1)
+        axis_set = set(axis)
+        removed_shapes = [[row[i] for i in axis] for row in new_shapes]
+        new_shapes = [[row[i] for i in range(n_dims) if i not in axis_set]
+                      for row in new_shapes]
 
     # If arrays are broadcastable, shape elements that are 1 may be replaced
-    # with a corresponding non-1 shape element. Assuming arrays are
-    # broadcastable, that final shape element can be found with:
-    new_shape = np.max(new_shapes, axis=0)
-    # except in case of an empty array:
-    new_shape *= new_shapes.all(axis=0)
-
-    # Among all arrays, there can only be one unique non-1 shape element.
-    # Therefore, if any non-1 shape element does not match what we found
-    # above, the arrays must not be broadcastable after all.
-    if np.any(~((new_shapes == 1) | (new_shapes == new_shape))):
-        raise ValueError("Array shapes are incompatible for broadcasting.")
+    # with a corresponding non-1 shape element.  (A zero element — an empty
+    # array — forces the result element to zero.)
+    n_reduced = len(new_shapes[0])
+    new_shape = []
+    for i in range(n_reduced):
+        vals = [row[i] for row in new_shapes]
+        target = 0 if 0 in vals else max(vals)
+        # Among all arrays, there can only be one unique non-1 shape
+        # element; otherwise the arrays are not broadcastable.
+        if any(s != 1 and s != target for s in vals):
+            raise ValueError("Array shapes are incompatible for broadcasting.")
+        new_shape.append(target)
 
     if axis is not None:
-        # Add back the shape elements that were ignored
-        new_axis = axis - np.arange(len(axis))
-        new_shapes = [tuple(np.insert(new_shape, new_axis, removed_shape))
-                      for removed_shape in removed_shapes]
+        # Add back the shape elements that were ignored.
+        # (Iterate ``removed_shapes`` — the reduced rows have already been
+        # discarded, and re-initializing ``new_shapes`` first would make a
+        # ``zip(new_shapes, ...)`` over an empty list.)
+        new_shapes = []
+        for removed in removed_shapes:
+            out = []
+            ri = 0
+            ni = 0
+            for i in range(n_dims):
+                if i in axis_set:
+                    out.append(removed[ri])
+                    ri += 1
+                else:
+                    out.append(new_shape[ni])
+                    ni += 1
+            new_shapes.append(tuple(out))
         return new_shapes
     else:
         return tuple(new_shape)

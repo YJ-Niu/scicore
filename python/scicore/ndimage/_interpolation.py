@@ -846,7 +846,7 @@ def zoom(input, zoom, output=None, order=3, mode='constant', cval=0.0,
         # zoom 1 means "return original image". If `prefilter=False`,
         # `input` is *not* the original image; processing is still needed
         # to undo the filter. So we only early exit if `prefilter`.
-        output = xpx.at(output)[...].set(input)
+        output[...] = input
         return output
     if complex_output:
         # import under different name to avoid confusion with zoom parameter
@@ -884,10 +884,11 @@ def zoom(input, zoom, output=None, order=3, mode='constant', cval=0.0,
         zoom_nominator -= 1
 
     # Zooming to infinite values is unpredictable, so just choose
-    # zoom factor 1 instead
-    zoom = np.divide(zoom_nominator, zoom_div,
-                     out=np.ones_like(input.shape, dtype=np.float64),
-                     where=zoom_div != 0)
+    # zoom factor 1 instead (rsnumpy's divide() has no out=/where= kwargs)
+    zoom = np.ones(len(input.shape), dtype=np.float64)
+    for ax in range(len(input.shape)):
+        if float(zoom_div[ax]) != 0.0:
+            zoom[ax] = float(zoom_nominator[ax]) / float(zoom_div[ax])
     zoom = np.ascontiguousarray(zoom)
     _nd_image.zoom_shift(filtered, zoom, None, output, order, mode, cval, npad,
                          grid_mode)
@@ -993,8 +994,8 @@ def rotate(input, angle, axes=(1, 0), reshape=True, output=None, order=3,
     if reshape:
         # Compute transformed input bounds
         iy, ix = in_plane_shape
-        out_bounds = rot_matrix @ [[0, 0, iy, iy],
-                                   [0, ix, 0, ix]]
+        out_bounds = rot_matrix @ np.array([[0, 0, iy, iy],
+                                            [0, ix, 0, ix]])
         # Compute the shape of the transformed input plane
         out_plane_shape = (np.ptp(out_bounds, axis=1) + 0.5).astype(int)
     else:

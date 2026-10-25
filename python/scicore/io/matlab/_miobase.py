@@ -237,8 +237,10 @@ def _get_matfile_version(fileobj):
     if hdr_bytes.count(0) == _HDR_N_BYTES:
         raise MatReadError("Mat file appears to be corrupt "
                            f"(first {_HDR_N_BYTES} bytes == 0)")
-    mopt_ints = np.ndarray(shape=(4,), dtype=np.uint8, buffer=hdr_bytes[:4])
-    if 0 in mopt_ints:
+    # Mat4 files have a zero somewhere in the first 4 bytes. Check the raw
+    # bytes directly: rsnumpy's ndarray(buffer=...) does not populate from
+    # the buffer, which would make this test meaningless.
+    if any(b == 0 for b in hdr_bytes[:4]):
         fileobj.seek(0)
         return (0,0)
     # For 5 format or 7.3 format we need to read an integer in the

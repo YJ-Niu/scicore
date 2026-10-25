@@ -7328,7 +7328,10 @@ def _power_divergence(f_obs, f_exp, ddof, axis, lambda_, sum_check=True):
     chi2 = _SimpleChi2(df)
     pvalue = _get_pvalue(stat, chi2 , alternative='greater', symmetric=False, xp=xp)
 
+    # rsnumpy reductions may return Python scalars (no ``.ndim``); wrap them.
+    stat = xp.asarray(stat)
     stat = stat[()] if stat.ndim == 0 else stat
+    pvalue = xp.asarray(pvalue)
     pvalue = pvalue[()] if pvalue.ndim == 0 else pvalue
 
     return Power_divergenceResult(stat, pvalue)
@@ -10983,9 +10986,10 @@ def linregress(x, y, alternative='two-sided', *, axis=0):
     xmean = xp.squeeze(xmean, axis=-1)
     ymean = xp.squeeze(ymean, axis=-1)
 
-    ssxm = xp.vecdot(x_, x_, axis=-1) / n
-    ssym = xp.vecdot(y_, y_, axis=-1) / n
-    ssxym = xp.vecdot(x_, y_, axis=-1) / n
+    # rsnumpy reductions may return Python scalars (no ``.dtype``); wrap.
+    ssxm = xp.asarray(xp.vecdot(x_, x_, axis=-1)) / n
+    ssym = xp.asarray(xp.vecdot(y_, y_, axis=-1)) / n
+    ssxym = xp.asarray(xp.vecdot(x_, y_, axis=-1)) / n
 
     # R-value
     #   r = ssxym / sqrt( ssxm * ssym )

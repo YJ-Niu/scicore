@@ -84,12 +84,17 @@ def toeplitz(c, r=None):
 
 @_apply_over_batch(("c", 1), ("r", 1), signature="(i),(j)->(i,j)")
 def _toeplitz(c, r):
-    # Form a 1-D array containing a reversed c followed by r[1:] that could be
-    # strided to give us toeplitz matrix.
+    # Form a 1-D array containing a reversed c followed by r[1:]; row i of the
+    # matrix is the slice vals[n-1-i : n-1-i+m]. scipy builds this with a
+    # negative-stride as_strided view over a *view* slice, but rsnumpy slicing
+    # copies, so the view's storage begins past the elements a negative stride
+    # would have to read — build the rows explicitly instead.
     vals = np.concatenate((c[::-1], r[1:]))
-    out_shp = len(c), len(r)
-    n = vals.strides[0]
-    return as_strided(vals[len(c)-1:], shape=out_shp, strides=(-n, n)).copy()
+    n, m = len(c), len(r)
+    out = np.empty((n, m), dtype=vals.dtype)
+    for i in range(n):
+        out[i, :] = vals[n - 1 - i : n - 1 - i + m]
+    return out
 
 
 @xp_capabilities(np_only=True)

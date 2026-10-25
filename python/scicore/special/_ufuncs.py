@@ -249,6 +249,92 @@ for _n in _for_math1:
 _register('gammaln', _math1(math.lgamma))
 _register('loggamma', _math1(math.lgamma))
 
+# Degree-based trigonometric functions (scipy names, not in stdlib ``math``).
+_register('cosdg', _math1(lambda x: math.cos(math.radians(x))))
+_register('sindg', _math1(lambda x: math.sin(math.radians(x))))
+_register('tandg', _math1(lambda x: math.tan(math.radians(x))))
+_register('cotdg', _math1(lambda x: 1.0 / math.tan(math.radians(x))))
+
+# scipy.special.xlogy: 0 if x == 0, else x * log(y) (two-argument).
+def _xlogy(x, y):
+    if x == 0:
+        return 0.0
+    return x * math.log(y)
+
+_register('xlogy', _math2(_xlogy))
+
+# scipy.special.ndtr: standard normal CDF, ndtr(x) = 0.5 * erfc(-x/sqrt(2)).
+_register('ndtr', _math1(lambda x: 0.5 * math.erfc(-x / math.sqrt(2.0))))
+
+# scipy.special.entr: entr(x) = -x*log(x), 0 if x == 0.
+_register('entr', _math1(
+    lambda x: 0.0 if x == 0 else -x * math.log(x)))
+
+# --- Regularized incomplete beta function + Student's t CDF (scipy names,
+# not in stdlib ``math``); needed by the beta and studentt distributions ---
+def _betacf(a, b, x):
+    """Continued fraction for the incomplete beta function (Lentz method)."""
+    max_it, eps, fpmin = 300, 3e-14, 1e-300
+    qab, qap, qam = a + b, a + 1.0, a - 1.0
+    c = 1.0
+    d = 1.0 - qab * x / qap
+    if abs(d) < fpmin:
+        d = fpmin
+    d = 1.0 / d
+    h = d
+    for m in range(1, max_it + 1):
+        m2 = 2 * m
+        aa = m * (b - m) * x / ((qam + m2) * (a + m2))
+        d = 1.0 + aa * d
+        if abs(d) < fpmin:
+            d = fpmin
+        c = 1.0 + aa / c
+        if abs(c) < fpmin:
+            c = fpmin
+        d = 1.0 / d
+        h *= d * c
+        aa = -(a + m) * (qab + m) * x / ((a + m2) * (qap + m2))
+        d = 1.0 + aa * d
+        if abs(d) < fpmin:
+            d = fpmin
+        c = 1.0 + aa / c
+        if abs(c) < fpmin:
+            c = fpmin
+        d = 1.0 / d
+        de = d * c
+        h *= de
+        if abs(de - 1.0) < eps:
+            break
+    return h
+
+
+def _betainc(a, b, x):
+    """Regularized incomplete beta function I_x(a, b)."""
+    if x <= 0.0:
+        return 0.0
+    if x >= 1.0:
+        return 1.0
+    ln_bt = (math.lgamma(a + b) - math.lgamma(a) - math.lgamma(b)
+             + a * math.log(x) + b * math.log(1.0 - x))
+    bt = math.exp(ln_bt)
+    if x < (a + 1.0) / (a + b + 2.0):
+        return bt * _betacf(a, b, x) / a
+    return 1.0 - bt * _betacf(b, a, 1.0 - x) / b
+
+
+_register('betainc', _betainc)
+_register('betaincc', lambda a, b, x: 1.0 - _betainc(a, b, x))
+
+
+def _stdtr(df, t):
+    """CDF of Student's t distribution with ``df`` degrees of freedom."""
+    x = df / (df + t * t)
+    p = 0.5 * _betainc(0.5 * df, 0.5, x)
+    return p if t < 0.0 else 1.0 - p
+
+
+_register('stdtr', _math2(_stdtr))
+
 # --- two-argument math functions ---
 _for_math2 = []
 for _n in _for_math2:

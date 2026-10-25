@@ -276,13 +276,13 @@ def __dir__():
 
 def __getattr__(name):
     if name in _submodules:
-        return _importlib.import_module(f'scipy.sparse.{name}')
+        return _importlib.import_module(f'scicore.sparse.{name}')
     else:
         try:
             return globals()[name]
         except KeyError:
             raise AttributeError(
-                f"Module 'scipy.sparse' has no attribute '{name}'"
+                f"Module 'scicore.sparse' has no attribute '{name}'"
             )
 
 from scicore._lib._testutils import PytestTester

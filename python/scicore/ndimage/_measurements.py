@@ -1545,7 +1545,14 @@ def center_of_mass(input, labels=None, index=None):
     """
     input = np.asarray(input)
     normalizer = sum_labels(input, labels, index)
-    grids = np.ogrid[[slice(0, i) for i in input.shape]]
+    # rsnumpy has no subscriptable ogrid; build the open-coordinate grids
+    # manually (axis ``ax`` varies along dimension ``ax`` only).
+    grids = []
+    for ax in range(input.ndim):
+        g = np.arange(input.shape[ax], dtype='float64')
+        shape = [1] * input.ndim
+        shape[ax] = input.shape[ax]
+        grids.append(g.reshape(shape))
 
     results = [sum_labels(input * grids[dir].astype(float), labels, index) / normalizer
                for dir in range(input.ndim)]

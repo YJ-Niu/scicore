@@ -110,13 +110,11 @@ def test_upfirdn():
     assert len(out) > 0
 
 
-@pytest.mark.xfail(reason="ValueError: Wn must specify start and stop (btype default handling broken)")
 def test_iirfilter():
     b, a = ssig.iirfilter(3, 0.1)
     assert np.isclose(np.sum(b) / np.sum(a), 1.0, rtol=1e-10)  # lowpass DC gain
 
 
-@pytest.mark.xfail(reason="TypeError: 'float' object cannot be interpreted as an integer")
 def test_tf2sos():
     b, a = ssig.butter(2, 0.1)
     sos = ssig.tf2sos(b, a)

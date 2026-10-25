@@ -121,7 +121,6 @@ def test_norm_matrix_ords():
     assert np.isclose(sla.norm(m, np.inf), 7.0)
 
 
-@pytest.mark.xfail(reason="rsnumpy: ndarray.conjugate missing / negative stride access bug")
 def test_toeplitz():
     t = sla.toeplitz(np.array([1.0, 2.0, 3.0]))
     assert np.allclose(t, np.array([[1.0, 2.0, 3.0], [2.0, 1.0, 2.0], [3.0, 2.0, 1.0]]))

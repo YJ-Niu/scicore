@@ -459,8 +459,23 @@ def xp_vector_norm(x: Array, /, *,
             # or to get the right behavior with nd, complex arrays
             return xp.sum(xp.conj(x) * x, axis=axis, keepdims=keepdims)**0.5
     else:
-        # to maintain backwards compatibility
-        return np.linalg.norm(x, ord=ord, axis=axis, keepdims=keepdims)
+        # to maintain backwards compatibility.
+        # rsnumpy's linalg.norm does not accept ``keepdims``, so re-apply it
+        # here with an explicit reshape.
+        result = np.linalg.norm(x, ord=ord, axis=axis)
+        if not keepdims:
+            return result
+        if axis is None:
+            return np.reshape(result, (1,) * x.ndim)
+        axes = axis if isinstance(axis, (list, tuple)) else [axis]
+        axes = sorted(set(int(a) for a in axes))
+        # keepdims keeps the rank: replace the reduced axis dim(s) by 1.
+        shape = list(x.shape)
+        for a in axes:
+            if a < 0:
+                a += x.ndim
+            shape[a] = 1
+        return np.reshape(result, tuple(shape))
 
 
 def xp_ravel(x: Array, /, *, xp: ModuleType | None = None) -> Array:
