@@ -250,6 +250,7 @@ fn dgetri_rust(
 // Fortran-signature shims so the call sites above are identical on every
 // platform; on macOS these names bind to the Accelerate symbols instead.
 #[cfg(not(target_os = "macos"))]
+#[allow(unsafe_op_in_unsafe_fn)]
 unsafe fn dgetrf_(
     m: *const i32,
     n: *const i32,
@@ -273,6 +274,7 @@ unsafe fn dgetrf_(
 
 #[cfg(not(target_os = "macos"))]
 #[allow(clippy::too_many_arguments)]
+#[allow(unsafe_op_in_unsafe_fn)]
 unsafe fn dgetrs_(
     trans: *const u8,
     n: *const i32,
@@ -302,6 +304,7 @@ unsafe fn dgetrs_(
 
 #[cfg(not(target_os = "macos"))]
 #[allow(clippy::too_many_arguments)]
+#[allow(unsafe_op_in_unsafe_fn)]
 unsafe fn dgetri_(
     n: *const i32,
     a: *mut f64,
