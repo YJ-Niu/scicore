@@ -67,7 +67,6 @@ def test_nnls():
     assert np.allclose(x, [1.0, 2.0])
 
 
-@pytest.mark.xfail(reason="TypeError: ndarray cannot be interpreted as an integer")
 def test_dual_annealing():
     res = sopt.dual_annealing(lambda x: (x[0] - 1) ** 2, [(-2.0, 2.0)])
     assert np.isclose(res.x[0], 1.0, atol=0.2)
