@@ -73,7 +73,6 @@ def test_hessian():
     assert np.allclose(H.ddf, [[2.0, 0.0], [0.0, 12.0]])
 
 
-@pytest.mark.xfail(reason="derivative() takes 2 positional arguments but 3 were given (n-order missing)")
 def test_second_derivative():
     # d^2/dx^2 (x^3) at x=2 = 12
     val = sdiff.derivative(lambda x: x**3, 2.0, 2)

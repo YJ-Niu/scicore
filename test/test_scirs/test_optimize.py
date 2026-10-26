@@ -32,13 +32,11 @@ def test_minimize_bfgs():
     assert np.allclose(res.x, [1.0, 0.0], atol=1e-6)
 
 
-@pytest.mark.xfail(reason="module 'scicore.optimize._zeros' has no attribute '_brentq'")
 def test_root_scalar_brentq():
     res = sopt.root_scalar(lambda x: x**2 - 4, bracket=[0, 3])
     assert np.isclose(res.root, 2.0, atol=1e-8)
 
 
-@pytest.mark.xfail(reason="module 'scicore.optimize._minpack' has no attribute '_hybrd'")
 def test_root_hybr():
     res = sopt.root(lambda x: x**2 - 4, [1.0, 1.0])
     assert np.allclose(res.x, [2.0], atol=1e-8)
@@ -51,7 +49,6 @@ def test_linprog():
     assert np.allclose(res.x, [0.5, 0.5])
 
 
-@pytest.mark.xfail(reason="TypeError: Unsupported operand type")
 def test_curve_fit_exponential():
     t = np.arange(5)
     y = [5.0, 3.0, 1.0, 0.4, 0.15]
@@ -60,7 +57,6 @@ def test_curve_fit_exponential():
     assert np.isclose(popt[1], 0.5, atol=0.3)
 
 
-@pytest.mark.xfail(reason="module 'scicore.optimize._minpack' has no attribute '_lmdif'")
 def test_leastsq():
     out = sopt.leastsq(lambda p: [p[0] - 1.0, p[1] - 2.0], [0, 0])
     assert np.allclose(out[0], [1.0, 2.0], atol=1e-8)

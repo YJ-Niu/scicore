@@ -395,10 +395,13 @@ def derivative(f, x, n=1, *, args=(), kwargs=None, tolerances=None, maxiter=10,
         # Higher-order derivative: nest the (n-1)-th derivative of `f` as the
         # function of the outer first-derivative computation.  `_f` is bound
         # eagerly to avoid a late-binding recursion into this wrapper.
-        nshape = np.broadcast_shapes(
-            np.shape(x), *(np.shape(arg) for arg in args))
-
         def _nderivative(xx, *a, _f=f, **kw):
+            # rsnumpy breaks elementwise arithmetic on 0-d arrays (e.g. x**3 on
+            # a 0-d array returns (1,)); promote scalar abscissae to (1,) for
+            # the nested call and restore the scalar result afterwards.
+            scalar_in = np.shape(xx) == ()
+            if scalar_in:
+                xx = np.reshape(xx, (1,))
             inner = derivative(_f, xx, n - 1, args=a,
                                kwargs=(kw or None),
                                tolerances=tolerances, maxiter=maxiter,
@@ -406,11 +409,9 @@ def derivative(f, x, n=1, *, args=(), kwargs=None, tolerances=None, maxiter=10,
                                step_factor=step_factor,
                                step_direction=step_direction,
                                preserve_shape=preserve_shape)
-            # The nested derivative may promote 0-d abscissae to (1,); restore
-            # the broadcast shape of the inputs.
             out = inner.df
-            if tuple(np.shape(out)) != tuple(nshape):
-                out = xp.reshape(out, nshape)
+            if scalar_in:
+                out = out.reshape(())
             return out
         f = _nderivative
 

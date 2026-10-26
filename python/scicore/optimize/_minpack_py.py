@@ -496,7 +496,9 @@ def leastsq(func, x0, args=(), Dfun=None, full_output=False,
                     raise LinAlgError(f'trtri returned info {trtri_info}')
                 invR[perm] = invR.copy()
                 cov_x = invR @ invR.T
-            except (LinAlgError, ValueError):
+            except (LinAlgError, ValueError, NotImplementedError):
+                # The backend may lack triangular inversion (e.g. rsnumpy
+                # without dtrtri); leave cov_x as None rather than failing.
                 pass
         return (retval[0], cov_x) + retval[1:-1] + (errors[info][0], info)
     else:
@@ -515,9 +517,9 @@ def _lightweight_memoizer(f):
         if _memoized_func.skip_lookup:
             return f(params)
 
-        if np.all(_memoized_func.last_params == params):
-            return _memoized_func.last_val
-        elif _memoized_func.last_params is not None:
+        if _memoized_func.last_params is not None:
+            if np.all(_memoized_func.last_params == params):
+                return _memoized_func.last_val
             _memoized_func.skip_lookup = True
 
         val = f(params)
