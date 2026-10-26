@@ -552,6 +552,12 @@ def install():
     # correct pure-Python implementation.
     rsnumpy.pad = _fixed_pad()
 
+    # rsnumpy ships no lib.stride_tricks.sliding_window_view (no stride
+    # tricks at all); SciPy's spectral and ndimage helpers rely on it.
+    _stride = getattr(getattr(rsnumpy, 'lib', None), 'stride_tricks', None)
+    if _stride is not None and not hasattr(_stride, 'sliding_window_view'):
+        _stride.sliding_window_view = _sliding_window_view
+
     # Make rsnumpy.ndarray hashable (needed for use as dict keys).
     # rsnumpy defines __eq__ which sets __hash__ = None; override it.
     if rsnumpy.ndarray.__hash__ is None:
@@ -565,6 +571,36 @@ def install():
 
     rsnumpy._scipy_compat_installed = True
     return rsnumpy
+
+
+def _sliding_window_view(x, window_shape, axis=None, writeable=None):
+    """Pure rsnumpy replacement for ``lib.stride_tricks.sliding_window_view``.
+
+    rsnumpy has no stride tricks, so the windowed array is built with basic
+    slicing only: 1-D inputs are assembled through a list of lists (which
+    ``asarray`` handles), higher-dimensional inputs through a zeros
+    allocation filled row by row.
+    """
+    x = rsnumpy.asarray(x)
+    if axis is None:
+        axis = x.ndim - 1
+    axis = axis % x.ndim
+    w = int(window_shape)
+    n = x.shape[axis]
+    if n < w:
+        raise ValueError(f"window shape {w} exceeds dimension size {n}")
+    m = n - w + 1
+    if x.ndim == 1:
+        return rsnumpy.array([x[i:i + w].tolist() for i in range(m)])
+    out_shape = x.shape[:axis] + (m, w) + x.shape[axis + 1:]
+    out = rsnumpy.zeros(out_shape)
+    for i in range(m):
+        in_idx = [slice(None)] * x.ndim
+        in_idx[axis] = slice(i, i + w)
+        out_idx = [slice(None)] * x.ndim
+        out_idx.insert(axis, i)
+        out[tuple(out_idx)] = x[tuple(in_idx)]
+    return out
 
 
 def _fixed_pad():

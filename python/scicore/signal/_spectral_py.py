@@ -2231,11 +2231,14 @@ def _spectral_helper(x, y, fs=1.0, window='hann', nperseg=None, noverlap=None,
         # Pad to integer number of windowed segments
         # I.e. make x.shape[-1] = nperseg + (nseg-1)*nstep, with integer nseg
         nadd = (-(x.shape[-1]-nperseg) % nstep) % nperseg
+        # rsnumpy's concatenate rejects negative axes
+        x_last = len(x.shape) - 1
         zeros_shape = list(x.shape[:-1]) + [nadd]
-        x = np.concatenate((x, np.zeros(zeros_shape)), axis=-1)
+        x = np.concatenate((x, np.zeros(zeros_shape)), axis=x_last)
         if not same_data:
+            y_last = len(y.shape) - 1
             zeros_shape = list(y.shape[:-1]) + [nadd]
-            y = np.concatenate((y, np.zeros(zeros_shape)), axis=-1)
+            y = np.concatenate((y, np.zeros(zeros_shape)), axis=y_last)
 
     # Handle detrending and window functions
     if not detrend:

@@ -56,13 +56,11 @@ def test_lfilter_zi():
 
 # ---------------- not yet ported / broken ----------------
 
-@pytest.mark.xfail(reason="rsnumpy: Cannot compute diff: axis has less than 2 elements")
 def test_butter_sos():
     sos = ssig.butter(2, 0.1, output="sos")
     assert sos.shape[1] == 6
 
 
-@pytest.mark.xfail(reason="rsnumpy: Cannot compute diff: axis has less than 2 elements")
 def test_sosfilt():
     sos = ssig.butter(2, 0.1, output="sos")
     out = ssig.sosfilt(sos, [1.0, 0.0, 0.0])
@@ -82,10 +80,10 @@ def test_periodogram():
     assert np.isclose(freqs[np.argmax(pxx)], 5.0, atol=1.0)
 
 
-@pytest.mark.xfail(reason="OverflowError: can't convert negative int to unsigned")
 def test_stft():
     x = np.sin(2 * np.pi * 5 * np.arange(256) / 256)
-    _, Zxx = ssig.stft(x)
+    # scipy's stft returns (freqs, times, Zxx)
+    _, _, Zxx = ssig.stft(x)
     assert Zxx.ndim == 2
 
 
@@ -99,7 +97,6 @@ def test_resample():
     assert len(out) == 8
 
 
-@pytest.mark.xfail(reason="TypeError: Shape must be a tuple or integer")
 def test_upfirdn():
     out = ssig.upfirdn([1.0, 1.0], [1.0, 2.0, 3.0])
     assert len(out) > 0

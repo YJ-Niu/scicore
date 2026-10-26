@@ -240,6 +240,9 @@ def zero_ext(x, n, axis=-1):
     """
     if n < 1:
         return x
+    # rsnumpy's concatenate rejects negative axes
+    if axis < 0:
+        axis += len(x.shape)
     zeros_shape = list(x.shape)
     zeros_shape[axis] = n
     zeros = np.zeros(zeros_shape, dtype=x.dtype)

@@ -81,7 +81,7 @@ def _curfit(x, y, k, w=None, xb=None, xe=None, s=None, nest=None, iopt=0,
     else:
         xe = float(xe)
     if s is None:
-        s = float(m)
+        s = 0.0
 
     # In iopt=1 mode, callers may pass preallocated/resized t/c; prefer that
     # size as the working `nest` to keep workspace sizing consistent.
@@ -573,7 +573,10 @@ class UnivariateSpline:
 
     @staticmethod
     def validate_input(x, y, w, bbox, k, s, ext, check_finite):
-        x, y, bbox = np.asarray(x), np.asarray(y), np.asarray(bbox)
+        x, y = np.asarray(x), np.asarray(y)
+        # rsnumpy can't construct arrays from None entries; keep bbox as a
+        # list so None bounds reach `_curfit` (inferred from the data range).
+        bbox = list(bbox)
         if w is not None:
             w = np.asarray(w)
         if check_finite:
@@ -592,7 +595,7 @@ class UnivariateSpline:
             raise ValueError("x and y should have a same length")
         elif w is not None and not x.size == y.size == w.size:
             raise ValueError("x, y, and w should have a same length")
-        elif bbox.shape != (2,):
+        elif len(bbox) != 2:
             raise ValueError("bbox shape should be (2,)")
         elif not (1 <= k <= 5):
             raise ValueError("k should be 1 <= k <= 5")
@@ -1993,7 +1996,10 @@ class RectBivariateSpline(BivariateSpline):
     """
 
     def __init__(self, x, y, z, bbox=[None] * 4, kx=3, ky=3, s=0, maxit=20):
-        x, y, bbox = ravel(x), ravel(y), ravel(bbox)
+        x, y = ravel(x), ravel(y)
+        # rsnumpy can't construct arrays from None entries; keep bbox as a
+        # list so None bounds reach `_regrid_smth` (inferred from the data).
+        bbox = list(bbox)
         z = np.asarray(z)
         if not np.all(diff(x) > 0.0):
             raise ValueError('x must be strictly increasing')
@@ -2005,7 +2011,7 @@ class RectBivariateSpline(BivariateSpline):
         if not y.size == z.shape[1]:
             raise ValueError('y dimension of z must have same number of '
                              'elements as y')
-        if not bbox.shape == (4,):
+        if not len(bbox) == 4:
             raise ValueError('bbox shape should be (4,)')
         if s is not None and not s >= 0.0:
             raise ValueError("s should be s >= 0.0")

@@ -1055,48 +1055,52 @@ def _cplxreal(z, tol=None):
         # Get tolerance from dtype of input
         tol = 100 * np.finfo((1.0 * z).dtype).eps
 
+    # rsnumpy boolean-mask indexing is unreliable, so the real/complex
+    # separation and run detection below use plain Python lists (filter
+    # zeros/poles are few).
+    zl = [complex(v) for v in z.tolist()]
     # Sort by real part, magnitude of imaginary part (speed up further sorting)
-    z = z[np.lexsort((abs(z.imag), z.real))]
+    zl.sort(key=lambda w: (w.real, abs(w.imag)))
 
-    # Split reals from conjugate pairs
-    real_indices = abs(z.imag) <= tol * abs(z)
-    zr = z[real_indices].real
+    real_vals = [w.real for w in zl if abs(w.imag) <= tol * abs(w)]
+    cplx = [w for w in zl if abs(w.imag) > tol * abs(w)]
 
-    if len(zr) == len(z):
+    if len(real_vals) == len(zl):
         # Input is entirely real
-        return np.array([]), zr
+        return np.array([]), np.array(real_vals)
 
     # Split positive and negative halves of conjugates
-    z = z[~real_indices]
-    zp = z[z.imag > 0]
-    zn = z[z.imag < 0]
+    zp = [w for w in cplx if w.imag > 0]
+    zn = [w for w in cplx if w.imag < 0]
 
     if len(zp) != len(zn):
         raise ValueError('Array contains complex value with no matching '
                          'conjugate.')
 
-    # Find runs of (approximately) the same real part
-    same_real = np.diff(zp.real) <= tol * abs(zp[:-1])
-    diffs = np.diff(np.concatenate(([0], same_real, [0])))
-    run_starts = np.nonzero(diffs > 0)[0]
-    run_stops = np.nonzero(diffs < 0)[0]
-
-    # Sort each run by their imaginary parts
-    for i in range(len(run_starts)):
-        start = run_starts[i]
-        stop = run_stops[i] + 1
-        for chunk in (zp[start:stop], zn[start:stop]):
-            chunk[...] = chunk[np.lexsort([abs(chunk.imag)])]
-
     # Check that negatives match positives
-    if any(abs(zp - zn.conj()) > tol * abs(zn)):
-        raise ValueError('Array contains complex value with no matching '
-                         'conjugate.')
+    for a, b in zip(zp, zn):
+        if abs(a - b.conjugate()) > tol * abs(b):
+            raise ValueError('Array contains complex value with no matching '
+                             'conjugate.')
 
-    # Average out numerical inaccuracy in real vs imag parts of pairs
-    zc = (zp + zn.conj()) / 2
+    # Find runs of (approximately) the same real part and sort each run by
+    # magnitude of the imaginary part, then average out the numerical
+    # inaccuracy in real vs imag parts of each pair.
+    zc = []
+    i, n = 0, len(zp)
+    while i < n:
+        j = i
+        while (j + 1 < n
+               and abs(zp[j + 1].real - zp[j].real) <= tol * abs(zp[j])):
+            j += 1
+        run_p = sorted(zp[i:j + 1], key=lambda w: abs(w.imag))
+        run_n = sorted(zn[i:j + 1], key=lambda w: abs(w.imag))
+        for a, b in zip(run_p, run_n):
+            zc.append((a + b.conjugate()) / 2)
+        i = j + 1
 
-    return zc, zr
+    return (np.array(zc) if zc else np.array([]),
+            np.array(real_vals) if real_vals else np.array([]))
 
 
 def _cplxpair(z, tol=None):
@@ -1722,8 +1726,16 @@ def zpk2sos(z, p, k, pairing=None, *, analog=False):
 
     # Ensure we have complex conjugate pairs
     # (note that _cplxreal only gives us one element of each complex pair):
-    z = np.concatenate(_cplxreal(z))
-    p = np.concatenate(_cplxreal(p))
+    def _cat_parts(parts):
+        # rsnumpy's concatenate mishandles empty members; drop them.
+        parts = [a for a in parts if len(a) > 0]
+        if not parts:
+            # (rsnumpy cannot construct an empty complex array)
+            return np.array([])
+        return np.concatenate(parts)
+
+    z = _cat_parts(_cplxreal(z))
+    p = _cat_parts(_cplxreal(p))
     if not np.isreal(k):
         raise ValueError('k must be real')
     k = k.real
