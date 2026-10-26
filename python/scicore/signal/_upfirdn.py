@@ -92,10 +92,9 @@ class _UpFIRDn:
         """Apply the prepared filter to the specified axis of N-D signal x."""
         output_len = _output_len(self._h_len_orig, x.shape[axis],
                                  self._up, self._down)
-        # Explicit use of np.int64 for output_shape dtype avoids OverflowError
-        # when allocating large array on platforms where intp is 32 bits.
-        output_shape = np.asarray(x.shape, dtype=np.int64)
-        output_shape[axis] = output_len
+        # rsnumpy's zeros() only accepts plain integer shapes, not int arrays.
+        output_shape = list(x.shape)
+        output_shape[axis] = int(output_len)
         out = np.zeros(output_shape, dtype=self._output_type, order='C')
         axis = axis % x.ndim
         mode = _check_mode(mode)
