@@ -378,7 +378,9 @@ def _minimize_lbfgsb(fun, x0, args=(), jac=None, bounds=None, maxcor=10,
 
     if bounds is not None:
         for i in range(0, n):
-            L, U = bounds[0, i], bounds[1, i]
+            # rsnumpy indexing yields 0-d arrays; unbox so the
+            # bounds_map tuple keys match plain floats.
+            L, U = bounds[0, i].tolist(), bounds[1, i].tolist()
             if not np.isinf(L):
                 low_bnd[i] = L
                 L = 1
