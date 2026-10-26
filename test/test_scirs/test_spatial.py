@@ -64,23 +64,22 @@ def test_convex_hull():
     assert np.isclose(hull.volume, 0.5)
 
 
-@pytest.mark.xfail(reason="_rotation_cy has no attribute 'from_quat'")
 def test_rotation_from_quat():
     rot = stf.Rotation.from_quat([0.0, 0.0, 0.0, 1.0])
     assert np.allclose(rot.as_quat(), [0.0, 0.0, 0.0, 1.0])
 
 
-@pytest.mark.xfail(reason="_rotation_cy has no attribute 'from_euler'")
 def test_rotation_apply_90deg_z():
     rot = stf.Rotation.from_euler("z", 90, degrees=True)
     assert np.allclose(rot.apply([1.0, 0.0, 0.0]), [0.0, 1.0, 0.0], atol=1e-12)
 
 
-@pytest.mark.xfail(reason="_rotation_cy has no attribute 'from_euler'")
 def test_slerp_midpoint():
+    # current Slerp API takes a single (batched) Rotation instance;
+    # from_euler's last dim must match the number of seq axes
     s = stf.Slerp(
         [0.0, 1.0],
-        [stf.Rotation.from_euler("z", 0, degrees=True), stf.Rotation.from_euler("z", 90, degrees=True)],
+        stf.Rotation.from_euler("z", [[0.0], [90.0]], degrees=True),
     )
     mid = s(0.5)
     assert np.allclose(mid.apply([1.0, 0.0, 0.0]), [np.cos(np.pi / 4), np.sin(np.pi / 4), 0.0], atol=1e-12)

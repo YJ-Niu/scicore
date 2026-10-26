@@ -4,9 +4,9 @@ name: Build and Publish Wheels
 # 也可在 Actions 页手动触发（workflow_dispatch）——手动触发只构建、不发布，
 # 适合先验证 wheel 能否在各平台构建。
 on:
-  push:
-    tags:
-      - "v*"
+  # push:
+  #   tags:
+  #     - "v*"
   release:
     types: [published]
   workflow_dispatch:

@@ -84,7 +84,10 @@ class _ScalarHessWrapper:
             else:
                 # dense
                 self._hess_func = "dense_callable"
-                self.H = np.atleast_2d(np.asarray(self.H))
+                # rsnumpy cannot build arrays from None (the dummy hessian
+                # used when no hessian is supplied returns None); keep None.
+                self.H = (None if self.H is None
+                          else np.atleast_2d(np.asarray(self.H)))
         elif hess in FD_METHODS:
                 self._hess_func = "fd_hess"
 

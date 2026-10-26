@@ -27,7 +27,6 @@ def test_linear_sum_assignment_identity():
 
 # ---------------- not yet ported / broken ----------------
 
-@pytest.mark.xfail(reason="'ndarray' object has no attribute '_array'")
 def test_minimize_bfgs():
     res = sopt.minimize(lambda x: (x[0] - 1) ** 2 + x[1] ** 2, [0.0, 0.0])
     assert np.allclose(res.x, [1.0, 0.0], atol=1e-6)
@@ -45,7 +44,7 @@ def test_root_hybr():
     assert np.allclose(res.x, [2.0], atol=1e-8)
 
 
-@pytest.mark.xfail(reason="'ndarray' object has no attribute '_array'")
+@pytest.mark.xfail(reason="HiGHS solver not yet ported (_highspy/_core is a stub)")
 def test_linprog():
     res = sopt.linprog(c=[-1, -1], A_ub=[[1, 1]], b_ub=[1])
     assert res.success

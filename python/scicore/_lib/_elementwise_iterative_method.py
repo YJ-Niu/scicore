@@ -110,8 +110,10 @@ def _initialize(func, xs, args, kwargs=None, complex_ok=False, multi_output_ok=F
     # have the same number of dimensions. Calls to `func` in the loop will have an extra
     # dimension, so we need to add an extra dimension in the call here, too.
     if preserve_shape:
-        fs = [(xp.asarray(func(x[..., xp.newaxis],
-                               *(arg[..., xp.newaxis] for arg in args)),
+        # rsnumpy's `x[..., None]` inserts the axis at position 1 instead of
+        # the end; use explicit expand_dims (verified correct) instead.
+        fs = [(xp.asarray(func(xp.expand_dims(x, axis=-1),
+                               *(xp.expand_dims(arg, axis=-1) for arg in args)),
                           device=device))[..., 0]
               for x in xs]
     else:

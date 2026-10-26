@@ -34,7 +34,12 @@ def select_backend(xp: ModuleType, cython_compatible: bool):
     """
     if is_numpy(xp) and not cython_compatible:
         return xp_backend
-    return backend_registry.get(xp, xp_backend)
+    backend = backend_registry.get(xp, xp_backend)
+    if not hasattr(backend, "from_quat"):
+        # The Cython backend has not been ported yet (stub module);
+        # fall back to the pure-Python backend.
+        return xp_backend
+    return backend
 
 
 def _promote(*args: ArrayLike, xp: ModuleType) -> Array:

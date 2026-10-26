@@ -63,20 +63,18 @@ def test_face_dataset():
 
 # ---------------- differentiate (broken) ----------------
 
-@pytest.mark.xfail(reason="ValueError: could not broadcast input array of size 4 into selection of size 2")
 def test_jacobian():
     J = sdiff.jacobian(lambda x: [x[0] * x[1], x[0] + x[1]], np.array([1.0, 2.0]))
-    assert np.allclose(J, [[2.0, 1.0], [1.0, 1.0]])
+    assert np.allclose(J.df, [[2.0, 1.0], [1.0, 1.0]])
 
 
-@pytest.mark.xfail(reason="ValueError: could not broadcast input array of size 4 into selection of size 2")
 def test_hessian():
     H = sdiff.hessian(lambda x: x[0] ** 2 + x[1] ** 3, np.array([1.0, 2.0]))
-    assert np.allclose(H, [[2.0, 0.0], [0.0, 12.0]])
+    assert np.allclose(H.ddf, [[2.0, 0.0], [0.0, 12.0]])
 
 
 @pytest.mark.xfail(reason="derivative() takes 2 positional arguments but 3 were given (n-order missing)")
 def test_second_derivative():
     # d^2/dx^2 (x^3) at x=2 = 12
     val = sdiff.derivative(lambda x: x**3, 2.0, 2)
-    assert np.isclose(val, 12.0, atol=1e-6)
+    assert np.isclose(val.df, 12.0, atol=1e-6)

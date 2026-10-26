@@ -69,7 +69,6 @@ def test_sosfilt():
     assert len(out) == 3
 
 
-@pytest.mark.xfail(reason="ValueError: All sub-arrays must have the same shape")
 def test_welch():
     x = np.sin(2 * np.pi * 5 * np.arange(256) / 256)
     freqs, pxx = ssig.welch(x, fs=256)
@@ -77,7 +76,6 @@ def test_welch():
     assert np.isclose(freqs[np.argmax(pxx)], 5.0, atol=1.0)
 
 
-@pytest.mark.xfail(reason="ValueError: All sub-arrays must have the same shape")
 def test_periodogram():
     x = np.sin(2 * np.pi * 5 * np.arange(256) / 256)
     freqs, pxx = ssig.periodogram(x, fs=256)

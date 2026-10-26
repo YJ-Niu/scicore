@@ -335,7 +335,10 @@ class PchipInterpolator(CubicHermiteSpline):
             whmean = (w1/mk[:-1, ...] + w2/mk[1:, ...]) / (w1 + w2)
 
             dk = xp.zeros_like(y)
-            dk = xpx.at(dk)[1:-1, ...].set(
+            # rsnumpy's slice+ellipsis setitem is broken; use integer row
+            # indices (verified working) for the interior rows instead.
+            inner = xp.arange(1, y.shape[0] - 1)
+            dk = xpx.at(dk)[inner].set(
                 xp.where(condition, xp.zeros_like(whmean), 1.0 / whmean)
             )
 

@@ -542,6 +542,16 @@ def install():
     rsnumpy.allclose = _fixed_allclose()
     rsnumpy.where = _fixed_where(rsnumpy.where)
 
+    # rsnumpy's 2-D+ boolean-mask getitem crashes with "0 is not a valid
+    # dimension size" (internal reshape of the empty selection) when the mask
+    # selects zero rows; return a correctly-shaped empty array instead.
+    _patch_empty_bool_getitem()
+
+    # rsnumpy's `pad` is broken (it misreads `pad_width` tuples, inserting
+    # them as values or silently dropping entries); replace it with a
+    # correct pure-Python implementation.
+    rsnumpy.pad = _fixed_pad()
+
     # Make rsnumpy.ndarray hashable (needed for use as dict keys).
     # rsnumpy defines __eq__ which sets __hash__ = None; override it.
     if rsnumpy.ndarray.__hash__ is None:
@@ -555,6 +565,139 @@ def install():
 
     rsnumpy._scipy_compat_installed = True
     return rsnumpy
+
+
+def _fixed_pad():
+    """Replace rsnumpy's broken `pad` with a correct pure-Python version.
+
+    rsnumpy's implementation misreads the `pad_width` tuples (it inserts
+    the tuples as values and silently drops 2-tuple entries).  SciPy's
+    signal code pads only the last axis, which this covers: leading pad
+    widths must be (0, 0).  Negative widths crop, as in NumPy.
+    """
+    def pad(array, pad_width, mode='constant', **kwargs):
+        a = rsnumpy.asarray(array)
+        if (a.ndim == 1 and len(pad_width) == 2
+                and all(isinstance(v, (int,)) for v in pad_width)):
+            widths = [tuple(pad_width)]
+        else:
+            widths = [tuple(w) for w in pad_width]
+        for w in widths[:-1]:
+            if any(v != 0 for v in w):
+                raise NotImplementedError(
+                    "compat pad only supports last-axis padding")
+        left, right = widths[-1]
+
+        if mode == 'constant':
+            cv = kwargs.get('constant_values', 0)
+            if hasattr(cv, '__len__'):
+                lval, rval = float(cv[0]), float(cv[1])
+            else:
+                lval = rval = float(cv)
+        elif mode in ('edge', 'wrap', 'reflect', 'symmetric'):
+            lval = rval = 0.0
+        else:
+            raise NotImplementedError(f"compat pad: unsupported mode {mode!r}")
+        reflect_type = kwargs.get('reflect_type', 'odd')
+
+        def pad_left(row, n):
+            p = left
+            if p <= 0 or n == 0:
+                return []
+            if mode == 'constant':
+                return [lval] * p
+            if mode == 'edge':
+                return [row[0]] * p
+            if mode == 'wrap':
+                return [row[(-i) % n] for i in range(p, 0, -1)]
+            # 'reflect' (reflect_type) / 'symmetric' (even): bounce the
+            # indices; even keeps the edge element, odd skips it.
+            even = mode == 'symmetric' or reflect_type == 'even'
+            lo, hi = (0, n - 1) if even else (1, n - 1)
+            if lo == hi:
+                return [row[lo]] * p
+            seg = list(range(lo, hi + 1)) + list(range(hi - 1, lo, -1))
+            seq = [seg[k % len(seg)] for k in range(p)]  # right-to-left
+            return [row[i] for i in reversed(seq)]
+
+        def pad_right(row, n):
+            p = right
+            if p <= 0 or n == 0:
+                return []
+            if mode == 'constant':
+                return [rval] * p
+            if mode == 'edge':
+                return [row[-1]] * p
+            if mode == 'wrap':
+                return [row[i % n] for i in range(p)]
+            even = mode == 'symmetric' or reflect_type == 'even'
+            if n <= 1:
+                return [row[0]] * p
+            lo, hi = (0, n - 1) if even else (1, n - 1)
+            if lo >= hi:
+                return [row[hi if hi >= 0 else 0]] * p
+            # mirror sequence starting closest to the right edge
+            if even:
+                seg = list(range(hi, lo - 1, -1)) + list(range(lo + 1, hi + 1))
+            else:
+                seg = list(range(hi - 1, lo - 1, -1)) + list(range(lo + 1, hi))
+            seq = [seg[k % len(seg)] for k in range(p)]
+            return [row[i] for i in seq]
+
+        if a.ndim == 1:
+            row = a.tolist()
+        else:
+            row = None
+        # crop negative widths first
+        if left < 0:
+            crop_l = -left
+            left = 0
+        else:
+            crop_l = 0
+        if right < 0:
+            crop_r = -right
+            right = 0
+        else:
+            crop_r = 0
+
+        if row is not None:
+            core = row[crop_l:len(row) - crop_r if crop_r else len(row)]
+            out = pad_left(core, len(core)) + core + pad_right(core, len(core))
+        else:
+            out = []
+            for r in a.tolist():
+                core = r[crop_l:len(r) - crop_r if crop_r else len(r)]
+                out.append(pad_left(core, len(core)) + core
+                           + pad_right(core, len(core)))
+        return rsnumpy.asarray(out)
+
+    return pad
+
+
+def _patch_empty_bool_getitem():
+    """Fix `arr[bool_mask]` for masks that select zero rows on 2-D+ arrays.
+
+    rsnumpy's boolean-mask getitem computes an internal reshape of the
+    selected rows and raises `ValueError: 0 is not a valid dimension size`
+    when the selection is empty.  The selected data is empty, so a
+    correctly-shaped zero array is an exact answer.
+    """
+    cls = type(rsnumpy.asarray([0.0]))
+    orig_getitem = cls.__getitem__
+
+    def getitem(self, key):
+        try:
+            return orig_getitem(self, key)
+        except (ValueError, OverflowError) as e:
+            if "0 is not a valid dimension size" not in str(e):
+                raise
+            if (isinstance(key, cls) and key.ndim == 1
+                    and not bool(rsnumpy.any(key))):
+                return rsnumpy.zeros((0,) + tuple(self.shape[1:]),
+                                     dtype=self.dtype)
+            raise
+
+    cls.__getitem__ = getitem
 
 
 def _patch_dtype_and_flags():
@@ -688,16 +831,25 @@ def _make_adopting(original):
         kwargs.pop('device', None)
         args = tuple(_to_rs(a) for a in args)
         # Convert dtype objects to rsnumpy-compatible form
-        if 'dtype' in kwargs:
-            dt = kwargs['dtype']
+        dt = kwargs.get('dtype')
+        if dt is not None:
             # Convert any dtype-like object (rsnumpy DType, numpy dtype, etc.)
             # to a plain string that rsnumpy understands.
             if hasattr(dt, 'name'):
-                kwargs['dtype'] = str(dt.name)
+                dt = str(dt.name)
             elif hasattr(dt, '__name__'):
-                kwargs['dtype'] = str(dt.__name__)
+                dt = str(dt.__name__)
             else:
-                kwargs['dtype'] = str(dt)
+                dt = str(dt)
+            kwargs['dtype'] = dt
+        # rsnumpy bug: asarray(list_of_arrays, dtype=...) flattens the result
+        # (e.g. [(2,8), (2,8)] -> (2,) instead of (2,2,8)); build without the
+        # dtype and convert afterwards (astype preserves shape).
+        if (args and isinstance(args[0], (list, tuple)) and dt is not None
+                and any(isinstance(e, rsnumpy.ndarray) for e in args[0])):
+            out = original(*args, **{k: v for k, v in kwargs.items()
+                                     if k != 'dtype'})
+            return out.astype(dt)
         kwargs = {k: _to_rs(v) for k, v in kwargs.items()}
         return original(*args, **kwargs)
 

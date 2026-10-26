@@ -177,7 +177,15 @@ def from_rotvec(rotvec: Array, degrees: bool = False) -> Array:
     # is the identity regardless.
     div_angle = angle + xp.astype(angle == 0, angle.dtype)
     scale = xp.sin(half_angle) / div_angle
-    quat = xp.concat([rotvec * scale, xp.cos(half_angle)], axis=-1)
+    # rsnumpy's xp.concat crashes on this input; assemble the quaternion via
+    # zeros + column assignment (verified working) instead.
+    vec = rotvec * scale
+    w = xp.cos(half_angle)
+    quat = xp.zeros((*w.shape, 4), dtype=w.dtype)
+    quat[..., 0] = vec[..., 0]
+    quat[..., 1] = vec[..., 1]
+    quat[..., 2] = vec[..., 2]
+    quat[..., 3] = w
     return quat
 
 
@@ -186,7 +194,13 @@ def from_mrp(mrp: Array) -> Array:
     if mrp.shape[-1] != 3:
         raise ValueError(f"Expected `mrp` to have shape (..., 3), got {mrp.shape}")
     mrp2_plus_1 = xp.linalg.vecdot(mrp, mrp, axis=-1)[..., None] + 1
-    q_no_norm = xp.concat([2 * mrp[..., :3], (2 - mrp2_plus_1)], axis=-1)
+    # rsnumpy's xp.concat crashes on this input; assemble via zeros + column
+    # assignment (verified working) instead.
+    q_no_norm = xp.zeros(mrp.shape[:-1] + (4,), dtype=mrp.dtype)
+    q_no_norm[..., 0] = 2 * mrp[..., 0]
+    q_no_norm[..., 1] = 2 * mrp[..., 1]
+    q_no_norm[..., 2] = 2 * mrp[..., 2]
+    q_no_norm[..., 3] = 2 - mrp2_plus_1
     quat = q_no_norm / mrp2_plus_1
     return quat
 
@@ -452,7 +466,10 @@ def as_davenport(
 
 
 def inv(quat: Array) -> Array:
-    return xpx.at(quat)[..., :3].multiply(-1, copy=True)
+    xp = array_namespace(quat)
+    # rsnumpy's xpx.at(quat)[..., :3].multiply(-1, copy=True) corrupts the
+    # input in place; plain broadcasting returns a new array instead.
+    return quat * xp.asarray([-1.0, -1.0, -1.0, 1.0], dtype=quat.dtype)
 
 
 def magnitude(quat: Array) -> Array:
@@ -630,6 +647,18 @@ def reduce(
     return reduced, left_best, right_best
 
 
+def _cross(a: Array, b: Array) -> Array:
+    """Cross product of (..., 3) vectors.
+
+    Prefers ``xp.linalg.cross`` (NumPy 2.1+); rsnumpy only exposes the
+    legacy top-level ``np.cross``.
+    """
+    xp = array_namespace(a)
+    if hasattr(xp.linalg, "cross"):
+        return xp.linalg.cross(a, b)
+    return xp.cross(a, b)
+
+
 def apply(quat: Array, points: Array, inverse: bool = False) -> Array:
     xp = array_namespace(quat)
     if not broadcastable(quat.shape[:-1] + (3,), points.shape):
@@ -642,8 +671,8 @@ def apply(quat: Array, points: Array, inverse: bool = False) -> Array:
     w = quat[..., 3:4]
     if inverse:
         qv = -qv
-    t = 2.0 * xp.linalg.cross(qv, points)
-    return points + w * t + xp.linalg.cross(qv, t)
+    t = 2.0 * _cross(qv, points)
+    return points + w * t + _cross(qv, t)
 
 
 def setitem(quat: Array, value: Array, indexer: int | slice | EllipsisType) -> Array:
@@ -972,7 +1001,16 @@ def _pow_scaled(quat: Array, n: float | Array) -> Array:
     div_norm = ax_norm + xp.astype(ax_norm == 0, ax_norm.dtype)  # avoid division by 0
     axis = quat[..., :3] / div_norm
     scaled = n * half_angle
-    return xp.concat([axis * xp.sin(scaled), xp.cos(scaled)], axis=-1)
+    # rsnumpy's xp.concat crashes on this input; assemble the quaternion via
+    # zeros + column assignment (verified working) instead.
+    vec = axis * xp.sin(scaled)
+    w = xp.cos(scaled)
+    out = xp.zeros((*w.shape, 4), dtype=w.dtype)
+    out[..., 0] = vec[..., 0]
+    out[..., 1] = vec[..., 1]
+    out[..., 2] = vec[..., 2]
+    out[..., 3] = w
+    return out
 
 
 def _normalize_quaternion(quat: Array) -> Array:
@@ -995,7 +1033,10 @@ def _quat_canonical(quat: Array) -> Array:
     mask = mask | (zero_wx & (quat[..., 1] < 0))
     zero_wxy = zero_wx & (quat[..., 1] == 0)
     mask = mask | (zero_wxy & (quat[..., 2] < 0))
-    return xp.where(mask[..., None], -quat, quat)
+    # rsnumpy's xp.where collapses to the condition's shape when the branches
+    # need broadcasting; use scalar branches plus an explicit (..., 1) factor.
+    sign = xp.where(mask, -1.0, 1.0).reshape(mask.shape + (1,))
+    return quat * sign
 
 
 def _elementary_basis_index(axis: str) -> int:
@@ -1135,15 +1176,17 @@ def compose_quat(p: Array, q: Array) -> Array:
     xp = array_namespace(p)
     px, py, pz, pw = p[..., 0], p[..., 1], p[..., 2], p[..., 3]
     qx, qy, qz, qw = q[..., 0], q[..., 1], q[..., 2], q[..., 3]
-    quat = xp.stack(
-        [
-            pw * qx + px * qw + py * qz - pz * qy,
-            pw * qy - px * qz + py * qw + pz * qx,
-            pw * qz + px * qy - py * qx + pz * qw,
-            pw * qw - px * qx - py * qy - pz * qz,
-        ],
-        axis=-1,
-    )
+    qx_out = pw * qx + px * qw + py * qz - pz * qy
+    qy_out = pw * qy - px * qz + py * qw + pz * qx
+    qz_out = pw * qz + px * qy - py * qx + pz * qw
+    qw_out = pw * qw - px * qx - py * qy - pz * qz
+    # rsnumpy's np.stack raises OverflowError on this input; build the
+    # quaternion via column assignment instead (verified working).
+    quat = xp.zeros((*qx_out.shape, 4), dtype=qx_out.dtype)
+    quat[..., 0] = qx_out
+    quat[..., 1] = qy_out
+    quat[..., 2] = qz_out
+    quat[..., 3] = qw_out
     return quat
 
 

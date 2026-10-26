@@ -425,10 +425,32 @@ def _clean_inputs(lp):
     # or if there are invalid data types in bounds. Just add a linprog prefix
     # to the error and re-raise.
     # Creating at least a 2-D array simplifies the cases to distinguish below.
-    if bounds is None or np.array_equal(bounds, []) or np.array_equal(bounds, [[]]):
+    def _bounds_is_empty(b):
+        # rsnumpy cannot build object arrays from bounds containing None, so
+        # the empty checks cannot go through np.array_equal.
+        if isinstance(b, (list, tuple)):
+            if len(b) == 0:
+                return True
+            if (len(b) == 1 and isinstance(b[0], (list, tuple))
+                    and len(b[0]) == 0):
+                return True
+        if hasattr(b, 'size') and b.size == 0:
+            return True
+        return False
+
+    def _none_to_nan(v):
+        # rsnumpy cannot convert None to float; NumPy turns None into nan,
+        # which the code below maps to +/-inf.
+        if v is None:
+            return float('nan')
+        if isinstance(v, (list, tuple)):
+            return [_none_to_nan(x) for x in v]
+        return v
+
+    if bounds is None or _bounds_is_empty(bounds):
         bounds = (0, np.inf)
     try:
-        bounds_conv = np.atleast_2d(np.array(bounds, dtype=float))
+        bounds_conv = np.atleast_2d(np.array(_none_to_nan(bounds), dtype=float))
     except ValueError as e:
         raise ValueError(
             "Invalid input for linprog: unable to interpret bounds, "

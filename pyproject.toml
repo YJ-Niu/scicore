@@ -19,7 +19,7 @@ module-name = "scicore._scicore_rs"
 # The distribution is `scirs`; the *import* package stays `scicore` so this
 # remains a drop-in replacement -- `pip install scirs`, then `import scicore`.
 name = "scirs"
-version = "0.1.5"
+version = "0.1.6"
 license = { file = "LICENSE.txt" }
 # PEP 639: without an explicit list maturin auto-detects every LICENSE* file
 # in the project root and advertises it as License-File metadata. That pulls

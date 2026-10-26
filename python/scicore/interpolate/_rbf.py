@@ -287,6 +287,9 @@ class Rbf:
             shp = args[0].shape + (self._target_dim,)
         else:
             shp = args[0].shape
-        xa = np.asarray([a.flatten() for a in args], dtype=np.float64)
+        # tolist() first: rsnumpy flattens a list of single-element arrays
+        # to 1-D, which cdist rejects ("XA must be 2-dimensional").
+        xa = np.asarray([np.asarray(a).flatten().tolist() for a in args],
+                        dtype=np.float64)
         r = self._call_norm(xa, self.xi)
         return np.dot(self._function(r), self.nodes).reshape(shp)

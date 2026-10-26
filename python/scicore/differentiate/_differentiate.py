@@ -70,7 +70,7 @@ _dask_reason = 'boolean indexing assignment'
 
 @xp_capabilities(skip_backends=[('array_api_strict', _array_api_strict_skip_reason),
                                 ('dask.array', _dask_reason)], jax_jit=False)
-def derivative(f, x, *, args=(), kwargs=None, tolerances=None, maxiter=10,
+def derivative(f, x, n=1, *, args=(), kwargs=None, tolerances=None, maxiter=10,
                order=8, initial_step=0.5, step_factor=2.0,
                step_direction=0, preserve_shape=False, callback=None):
     """Evaluate the derivative of an elementwise, real scalar function numerically.
@@ -389,6 +389,31 @@ def derivative(f, x, *, args=(), kwargs=None, tolerances=None, maxiter=10,
     #  - relative steps?
     #  - show example of `np.vectorize`
 
+    if n < 1:
+        raise ValueError("`n` must be a positive integer")
+    if n > 1:
+        # Higher-order derivative: nest the (n-1)-th derivative of `f` as the
+        # function of the outer first-derivative computation.  `_f` is bound
+        # eagerly to avoid a late-binding recursion into this wrapper.
+        nshape = np.broadcast_shapes(
+            np.shape(x), *(np.shape(arg) for arg in args))
+
+        def _nderivative(xx, *a, _f=f, **kw):
+            inner = derivative(_f, xx, n - 1, args=a,
+                               kwargs=(kw or None),
+                               tolerances=tolerances, maxiter=maxiter,
+                               order=order, initial_step=initial_step,
+                               step_factor=step_factor,
+                               step_direction=step_direction,
+                               preserve_shape=preserve_shape)
+            # The nested derivative may promote 0-d abscissae to (1,); restore
+            # the broadcast shape of the inputs.
+            out = inner.df
+            if tuple(np.shape(out)) != tuple(nshape):
+                out = xp.reshape(out, nshape)
+            return out
+        f = _nderivative
+
     res = _derivative_iv(f, x, args, kwargs, tolerances, maxiter, order, initial_step,
                          step_factor, step_direction, preserve_shape, callback)
     (func, x, args, kwargs, atol, rtol, maxiter, order,
@@ -480,24 +505,31 @@ def derivative(f, x, *, args=(), kwargs=None, tolerances=None, maxiter=10,
         d = c**0.5  # square root of step reduction factor (one-sided stencil)
         # Note - no need to be careful about dtypes until we allocate `x_eval`
 
+        # rsnumpy's concat/flip reject a negative axis; h and friends are
+        # always 2-D here (n_elements, 1), so use the positive equivalent.
         if work.nit == 0:
             hc = h / c**xp.arange(n, dtype=work.dtype, device=xp_device(work.x))
-            hc = xp.concat((-xp.flip(hc, axis=-1), hc), axis=-1)
+            hc = xp.concat((-xp.flip(hc, axis=1), hc), axis=1)
         else:
-            hc = xp.concat((-h, h), axis=-1) / c**(n-1)
+            hc = xp.concat((-h, h), axis=1) / c**(n-1)
 
         if work.nit == 0:
             hr = h / d**xp.arange(2*n, dtype=work.dtype, device=xp_device(work.x))
         else:
-            hr = xp.concat((h, h/d), axis=-1) / c**(n-1)
+            hr = xp.concat((h, h/d), axis=1) / c**(n-1)
 
         n_new = 2*n if work.nit == 0 else 2  # number of new abscissae
         x_eval = xp.zeros((work.hdir.shape[0], n_new), dtype=work.dtype,
                           device=xp_device(work.x))
         il, ic, ir = work.il, work.ic, work.ir
-        x_eval = xpx.at(x_eval)[ir].set(work.x[ir][:, xp.newaxis] + hr[ir])
-        x_eval = xpx.at(x_eval)[ic].set(work.x[ic][:, xp.newaxis] + hc[ic])
-        x_eval = xpx.at(x_eval)[il].set(work.x[il][:, xp.newaxis] - hr[il])
+        # rsnumpy cannot build `x[mask][:, None]` when the mask selects no
+        # rows; skip empty masks (there are simply no rows to fill).
+        if xp.any(ir):
+            x_eval = xpx.at(x_eval)[ir].set(work.x[ir][:, xp.newaxis] + hr[ir])
+        if xp.any(ic):
+            x_eval = xpx.at(x_eval)[ic].set(work.x[ic][:, xp.newaxis] + hc[ic])
+        if xp.any(il):
+            x_eval = xpx.at(x_eval)[il].set(work.x[il][:, xp.newaxis] - hr[il])
         return x_eval
 
     def post_func_eval(x, f, work):
@@ -531,31 +563,48 @@ def derivative(f, x, *, args=(), kwargs=None, tolerances=None, maxiter=10,
         # Central difference
         # `work_fc` is *all* the points at which the function has been evaluated
         # `fc` is the points we're using *this iteration* to produce the estimate
+        # rsnumpy's concat rejects a negative axis; all inputs here are 2-D
+        # (n_elements, k), so the last axis is axis 1.
         work_fc = (f[ic][:, :n_new], work.fs[ic], f[ic][:, -n_new:])
-        work_fc = xp.concat(work_fc, axis=-1)
+        work_fc = xp.concat(work_fc, axis=1)
         if work.nit == 0:
             fc = work_fc
         else:
             fc = (work_fc[:, :n], work_fc[:, n:n+1], work_fc[:, -n:])
-            fc = xp.concat(fc, axis=-1)
+            fc = xp.concat(fc, axis=1)
 
         # One-sided difference
-        work_fo = xp.concat((work.fs[io], f[io]), axis=-1)
+        work_fo = xp.concat((work.fs[io], f[io]), axis=1)
         if work.nit == 0:
             fo = work_fo
         else:
-            fo = xp.concat((work_fo[:, 0:1], work_fo[:, -2*n:]), axis=-1)
+            fo = xp.concat((work_fo[:, 0:1], work_fo[:, -2*n:]), axis=1)
 
         work.fs = xp.zeros((ic.shape[0], work.fs.shape[-1] + 2*n_new),
                            dtype=work.dtype, device=xp_device(work.x))
-        work.fs = xpx.at(work.fs)[ic].set(work_fc)
-        work.fs = xpx.at(work.fs)[io].set(work_fo)
+        # rsnumpy crashes on empty boolean masks; skip empty selections
+        # (there are simply no rows to fill).
+        if xp.any(ic):
+            work.fs = xpx.at(work.fs)[ic].set(work_fc)
+        if xp.any(io):
+            work.fs = xpx.at(work.fs)[io].set(work_fo)
 
         wc, wo = _derivative_weights(work, n, xp)
+
+        def _per_element(est):
+            # rsnumpy broadcasts (k,1)/(k,) to (k,k); squeeze the estimate to
+            # the per-element (k,) shape that work.df expects.
+            return est[:, 0] if est.ndim > 1 else est
+
         work.df_last = xp.asarray(work.df, copy=True)
-        work.df = xpx.at(work.df)[ic].set(fc @ wc / work.h[ic])
-        work.df = xpx.at(work.df)[io].set(fo @ wo / work.h[io])
-        work.df = xpx.at(work.df)[il].multiply(-1)
+        if xp.any(ic):
+            work.df = xpx.at(work.df)[ic].set(
+                _per_element(fc @ wc) / work.h[ic])
+        if xp.any(io):
+            work.df = xpx.at(work.df)[io].set(
+                _per_element(fo @ wo) / work.h[io])
+        if xp.any(il):
+            work.df = xpx.at(work.df)[il].multiply(-1)
 
         work.h /= work.fac
         work.error_last = work.error
@@ -571,6 +620,12 @@ def derivative(f, x, *, args=(), kwargs=None, tolerances=None, maxiter=10,
     def check_termination(work):
         """Terminate due to convergence, non-finite values, or error increase"""
         stop = xp.astype(xp.zeros_like(work.df), xp.bool)
+
+        # Nothing can terminate before the first iteration (df and error are
+        # all NaN); the early return is exactly the NumPy result and avoids
+        # rsnumpy's unreliable scalar-vs-array NaN comparison.
+        if work.nit == 0:
+            return stop
 
         i = work.error < work.atol + work.rtol*abs(work.df)
         work.status = xpx.at(work.status)[i].set(eim._ECONVERGED)
@@ -946,7 +1001,10 @@ def jacobian(f, x, *, tolerances=None, maxiter=10, order=8, initial_step=0.5,
         if x.ndim != x0.ndim:
             xph = xp.expand_dims(xph, axis=-1)
         xph = xp_copy(xp.broadcast_to(xph, new_shape), xp=xp)
-        xph = xpx.at(xph)[i, i].set(x)
+        # rsnumpy's fancy-indexed setitem (at()[i, i].set(x)) fails with a
+        # broadcast error; set the diagonal element-wise instead.
+        for k in range(m):
+            xph[k, k] = x[k]
         return f(xph)
 
     res = derivative(wrapped, x, tolerances=tolerances,
