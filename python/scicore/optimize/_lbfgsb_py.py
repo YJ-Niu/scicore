@@ -453,7 +453,9 @@ def _minimize_lbfgsb(fun, x0, args=(), jac=None, bounds=None, maxcor=10,
     n_corrs = min(n_bfgs_updates, maxcor)
     hess_inv = LbfgsInvHessProduct(s[:n_corrs], y[:n_corrs])
 
-    msg = status_messages[task[0]] + ": " + task_messages[task[1]]
+    # rsnumpy integer indexing yields 0-d arrays, not scalars; hash as ints.
+    t0, t1 = int(task[0].tolist()), int(task[1].tolist())
+    msg = status_messages[t0] + ": " + task_messages[t1]
 
     return OptimizeResult(fun=f, jac=g, nfev=sf.nfev,
                           njev=sf.ngev,

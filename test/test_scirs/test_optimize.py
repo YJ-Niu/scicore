@@ -62,7 +62,6 @@ def test_leastsq():
     assert np.allclose(out[0], [1.0, 2.0], atol=1e-8)
 
 
-@pytest.mark.xfail(reason="ValueError: not enough values to unpack (expected 3, got 2)")
 def test_nnls():
     x, _ = sopt.nnls(np.array([[1.0, 0.0], [0.0, 1.0]]), np.array([1.0, 2.0]))
     assert np.allclose(x, [1.0, 2.0])

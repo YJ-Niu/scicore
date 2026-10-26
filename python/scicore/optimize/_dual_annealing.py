@@ -7,6 +7,8 @@
 A Dual Annealing global optimization algorithm
 """
 
+import math
+
 import rsnumpy as np
 from scicore.optimize._optimize import OptimizeResult
 from scicore.optimize._minimize import minimize
@@ -82,14 +84,20 @@ class VisitingDistribution:
             # Changing all coordinates with a new visiting value
             visits = self.visit_fn(temperature, dim)
             upper_sample, lower_sample = self.rng_gen.uniform(size=2)
-            visits[visits > self.TAIL_LIMIT] = self.TAIL_LIMIT * upper_sample
-            visits[visits < -self.TAIL_LIMIT] = -self.TAIL_LIMIT * lower_sample
+            # rsnumpy has no boolean-mask assignment; use np.where instead.
+            visits = np.where(
+                visits > self.TAIL_LIMIT,
+                self.TAIL_LIMIT * upper_sample, visits)
+            visits = np.where(
+                visits < -self.TAIL_LIMIT,
+                -self.TAIL_LIMIT * lower_sample, visits)
             x_visit = visits + x
             a = x_visit - self.lower
             b = np.fmod(a, self.bound_range) + self.bound_range
             x_visit = np.fmod(b, self.bound_range) + self.lower
-            x_visit[np.fabs(
-                x_visit - self.lower) < self.MIN_VISIT_BOUND] += 1.e-10
+            x_visit = np.where(
+                np.fabs(x_visit - self.lower) < self.MIN_VISIT_BOUND,
+                x_visit + 1.e-10, x_visit)
         else:
             # Changing only one coordinate at a time based on strategy
             # chain step
@@ -264,13 +272,16 @@ class StrategyChain:
         self.K = 100 * len(energy_state.current_location)
 
     def accept_reject(self, j, e, x_visit):
-        r = self._rand_gen.uniform()
+        # rsnumpy Generator scalars are 0-d arrays (and float() on them is
+        # broken); extract Python scalars with .tolist().
+        r = self._rand_gen.uniform().tolist()
         pqv_temp = 1.0 - ((1.0 - self.acceptance_param) *
             (e - self.energy_state.current_energy) / self.temperature_step)
         if pqv_temp <= 0.:
             pqv = 0.
         else:
-            pqv = np.exp(np.log(pqv_temp) / (
+            # plain math: rsnumpy scalar exp/log return (1,) arrays
+            pqv = math.exp(math.log(pqv_temp) / (
                 1. - self.acceptance_param))
 
         if r <= pqv:
@@ -379,7 +390,15 @@ class ObjectiveFunWrapper:
 
     def fun(self, x):
         self.nfev += 1
-        return self.func(x, *self.args)
+        # rsnumpy scalar arithmetic on 0-d / (1,) arrays can return arrays;
+        # normalize to a Python float so downstream comparisons and
+        # arithmetic stay in plain floats.
+        val = np.asarray(self.func(x, *self.args))
+        if val.ndim == 0:
+            return val.tolist()
+        if val.size == 1:
+            return val.reshape(1).tolist()[0]
+        raise ValueError("the objective function must return a scalar")
 
 
 class LocalSearchWrapper:
