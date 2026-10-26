@@ -40,15 +40,15 @@ def test_rbf():
                       atol=1e-10)
 
 
-@pytest.mark.xfail(reason="TypeError: Unsupported data type")
 def test_rect_bivariate_spline():
     rbs = sinterp.RectBivariateSpline(
-        np.array([0.0, 1.0]), np.array([0.0, 1.0]), np.array([[0.0, 1.0], [1.0, 4.0]])
+        np.array([0.0, 1.0]), np.array([0.0, 1.0]), np.array([[0.0, 1.0], [1.0, 4.0]]),
+        kx=1, ky=1
     )
     assert np.isclose(rbs(0.5, 0.5), 1.5)
 
 
-@pytest.mark.xfail(reason="TypeError: Unsupported data type")
 def test_univariate_spline():
-    us = sinterp.UnivariateSpline(np.array([0.0, 1.0, 2.0]), np.array([0.0, 1.0, 4.0]))
+    us = sinterp.UnivariateSpline(np.array([0.0, 1.0, 2.0]), np.array([0.0, 1.0, 4.0]),
+                                  k=2)
     assert np.allclose(us(np.array([0.0, 1.0, 2.0])), [0.0, 1.0, 4.0], atol=1e-6)

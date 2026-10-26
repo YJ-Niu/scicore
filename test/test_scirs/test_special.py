@@ -59,7 +59,6 @@ def test_digamma_psi():
     assert np.isclose(sp.psi(4.0), (1 + 1 / 2 + 1 / 3) - euler, rtol=1e-12)
 
 
-@pytest.mark.xfail(reason="TypeError: float() argument is NoneType")
 def test_zeta():
     assert np.isclose(sp.zeta(2.0), np.pi**2 / 6, rtol=1e-10)
     assert np.isclose(sp.zeta(4.0), np.pi**4 / 90, rtol=1e-10)
@@ -98,7 +97,6 @@ def test_expit():
     assert np.isclose(sp.expit(2.0), 1.0 / (1.0 + np.exp(-2.0)), rtol=1e-12)
 
 
-@pytest.mark.xfail(reason="TypeError: 'tuple' object cannot be interpreted as an integer")
 def test_logsumexp():
     x = np.array([1.0, 2.0, 3.0])
     expected = np.log(np.exp(1.0) + np.exp(2.0) + np.exp(3.0))
@@ -131,7 +129,6 @@ def test_exprel():
     assert np.isclose(sp.exprel(1.0), np.expm1(1.0))
 
 
-@pytest.mark.xfail(reason="returns poly1d with nan coefficients")
 def test_chebyt():
     t = sp.chebyt(2)
     assert np.isclose(t(0.5), -0.5)  # T_2(0.5) = 2*(0.25) - 1 = -0.5

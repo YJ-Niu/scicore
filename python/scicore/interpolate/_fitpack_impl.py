@@ -306,11 +306,9 @@ def splrep(x, y, w=None, xb=None, xe=None, k=3, task=0, s=None, t=None,
 def splev(x, tck, der=0, ext=0):
     # see the docstring of `_fitpack_py/splev`
     t, c, k = tck
-    try:
-        c[0][0]
-        parametric = True
-    except Exception:
-        parametric = False
+    # rsnumpy 0-dim __getitem__ does not raise, so the classic c[0][0]
+    # probe misfires; use the dimension directly instead.
+    parametric = np.ndim(c) >= 2
     if parametric:
         return list(map(lambda c, x=x, t=t, k=k, der=der:
                         splev(x, [t, c, k], der, ext), c))
@@ -341,11 +339,9 @@ def splev(x, tck, der=0, ext=0):
 def splint(a, b, tck, full_output=0):
     # see the docstring of `_fitpack_py/splint`
     t, c, k = tck
-    try:
-        c[0][0]
-        parametric = True
-    except Exception:
-        parametric = False
+    # rsnumpy 0-dim __getitem__ does not raise, so the classic c[0][0]
+    # probe misfires; use the dimension directly instead.
+    parametric = np.ndim(c) >= 2
     if parametric:
         return list(map(lambda c, a=a, b=b, t=t, k=k:
                         splint(a, b, [t, c, k]), c))
@@ -362,11 +358,9 @@ def sproot(tck, mest=10):
     t, c, k = tck
     if k != 3:
         raise ValueError("sproot works only for cubic (k=3) splines")
-    try:
-        c[0][0]
-        parametric = True
-    except Exception:
-        parametric = False
+    # rsnumpy 0-dim __getitem__ does not raise, so the classic c[0][0]
+    # probe misfires; use the dimension directly instead.
+    parametric = np.ndim(c) >= 2
     if parametric:
         return list(map(lambda c, t=t, k=k, mest=mest:
                         sproot([t, c, k], mest), c))
@@ -389,11 +383,9 @@ def sproot(tck, mest=10):
 def spalde(x, tck):
     # see the docstring of `_fitpack_py/spalde`
     t, c, k = tck
-    try:
-        c[0][0]
-        parametric = True
-    except Exception:
-        parametric = False
+    # rsnumpy 0-dim __getitem__ does not raise, so the classic c[0][0]
+    # probe misfires; use the dimension directly instead.
+    parametric = np.ndim(c) >= 2
     if parametric:
         return list(map(lambda c, x=x, t=t, k=k:
                         spalde(x, [t, c, k]), c))
@@ -735,11 +727,9 @@ def dblint(xa, xb, ya, yb, tck):
 def insert(x, tck, m=1, per=0):
     # see the docstring of `_fitpack_py/insert`
     t, c, k = tck
-    try:
-        c[0][0]
-        parametric = True
-    except Exception:
-        parametric = False
+    # rsnumpy 0-dim __getitem__ does not raise, so the classic c[0][0]
+    # probe misfires; use the dimension directly instead.
+    parametric = np.ndim(c) >= 2
     if parametric:
         cc = []
         for c_vals in c:

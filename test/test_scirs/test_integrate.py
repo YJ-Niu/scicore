@@ -48,7 +48,6 @@ def test_simpson():
     assert np.isclose(sint.simpson(np.array([1.0, 2.0, 1.0]), x=np.array([0.0, 1.0, 2.0])), 10.0 / 3.0)
 
 
-@pytest.mark.xfail(reason="ValueError: truth value of array with more than one element is ambiguous")
 def test_odeint():
     out = sint.odeint(lambda y, t: [-y[1], y[0]], [1.0, 0.0], np.array([0.0, 1.0]))
     assert np.allclose(out[-1], [np.cos(1.0), np.sin(1.0)], atol=1e-6)

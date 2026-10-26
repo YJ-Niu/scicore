@@ -149,6 +149,11 @@ class _ufunc(np.ufunc):
     def __call__(self, *args, **kwargs):
         # Convert rsnumpy arrays to plain Python lists / scalars, apply
         # elementwise, then wrap back in rsnumpy.
+        # ufunc calls may pass the output buffer positionally (scipy does
+        # `_riemann_zeta(x, out)`); a None buffer means "return the result".
+        while args and args[-1] is None:
+            args = args[:-1]
+        kwargs.pop('out', None)
         import rsnumpy as _np
         rs_arrays = [a for a in args if isinstance(a, _np.ndarray)]
         if rs_arrays:
@@ -635,6 +640,82 @@ def _eval_hermite(n, x):
 _register('eval_legendre', _eval_legendre)
 _register('eval_hermite', _eval_hermite)
 
+
+def _eval_chebyt(n, x):
+    """Chebyshev polynomial of the first kind T_n(x)."""
+    n = int(n)
+    x = float(x)
+    if n == 0:
+        return 1.0
+    if n == 1:
+        return x
+    if abs(x) <= 1.0:
+        return math.cos(n * math.acos(x))
+    if x > 1.0:
+        return math.cosh(n * math.acosh(x))
+    v = math.cosh(n * math.acosh(-x))
+    return v if n % 2 == 0 else -v
+
+
+# Bernoulli numbers B_2, B_4, ..., B_30 (exact values as floats)
+_BERNOULLI = [
+    1.0 / 6, -1.0 / 30, 1.0 / 42, -1.0 / 30, 5.0 / 66,
+    -691.0 / 2730, 7.0 / 6, -3617.0 / 510, 43867.0 / 798,
+    -174611.0 / 330, 854513.0 / 138, -236364091.0 / 2730,
+    8553103.0 / 6, -23749461029.0 / 870, 8615841276005.0 / 14322,
+]
+
+
+def _zeta_euler_maclaurin(s, q=1.0):
+    """zeta(s, q) = sum_{n=0}^inf (n + q)^-s for s > 1 (Euler-Maclaurin)."""
+    N = 50
+    K = 15
+    total = 0.0
+    for n in range(N):
+        total += (n + q) ** (-s)
+    a = N + q
+    total += a ** (1.0 - s) / (s - 1.0)
+    total += 0.5 * a ** (-s)
+    for k in range(1, K + 1):
+        rising = 1.0
+        for j in range(2 * k - 1):
+            rising *= s + j
+        total += (_BERNOULLI[k - 1] / math.factorial(2 * k) * rising
+                  * a ** (-s - 2 * k + 1))
+    return total
+
+
+def _riemann_zeta_impl(x):
+    """Riemann zeta function for real x."""
+    x = float(x)
+    if x == 1.0:
+        return float('inf')
+    if x == 0.0:
+        return -0.5
+    if x > 1.0:
+        return _zeta_euler_maclaurin(x)
+    # Functional equation: zeta(x) = 2^x pi^{x-1} sin(pi x/2)
+    # * gamma(1 - x) * zeta(1 - x)
+    return (2.0 ** x) * math.pi ** (x - 1.0) \
+        * math.sin(0.5 * math.pi * x) * math.gamma(1.0 - x) \
+        * _zeta_euler_maclaurin(1.0 - x)
+
+
+def _zeta_impl(x, q):
+    """Hurwitz zeta zeta(x, q) for x > 1 (Riemann zeta at q = 1)."""
+    x = float(x)
+    q = float(q)
+    if x > 1.0:
+        return _zeta_euler_maclaurin(x, q)
+    if q == 1.0:
+        return _riemann_zeta_impl(x)
+    return float('nan')
+
+
+_register('eval_chebyt', _eval_chebyt)
+_register('_riemann_zeta', _riemann_zeta_impl)
+_register('_zeta', _zeta_impl)
+
 # Register the rest as NaN-returning stubs
 _for_stub = [n for n in __all__ if n not in _SCALAR_FUNCS and n not in (
     'geterr', 'seterr', 'errstate',
@@ -781,10 +862,10 @@ for _name in ('_cosine_cdf', '_cosine_invcdf', '_bivariate_normal_cdf',
               '_iv_ratioinv', '_kolmogc', '_kolmogci', '_kolmogp',
               '_lambertw', '_lgam1p', '_log1mexp', '_log1pmx',
               '_mathieu_cem', '_mathieu_sem', '_normalized_gen_harmonic',
-              '_riemann_zeta', '_scaled_exp1', '_sf_error_test_function',
+              '_scaled_exp1', '_sf_error_test_function',
               '_sinpi', '_smirnovc', '_smirnovci', '_smirnovp',
               '_spherical_in', '_spherical_in_d',
               '_spherical_jn_d', '_spherical_kn', '_spherical_kn_d',
               '_spherical_yn', '_spherical_yn_d', '_von_mises_cdf',
-              '_stirling2_inexact', '_zeta'):
+              '_stirling2_inexact'):
     globals()[_name] = _ufunc(_name, lambda *args: float('nan'), nout=1)

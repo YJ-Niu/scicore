@@ -112,6 +112,10 @@ def logsumexp(a, axis=None, b=None, keepdims=False, return_sign=False):
     a = xpx.atleast_nd(a, ndim=1, xp=xp)
     b = xpx.atleast_nd(b, ndim=1, xp=xp) if b is not None else b
     axis = tuple(range(a.ndim)) if axis is None else axis
+    # rsnumpy reductions and squeeze reject axis tuples; collapse a
+    # single-axis reduction to a scalar axis.
+    if isinstance(axis, tuple) and len(axis) == 1:
+        axis = axis[0]
 
     if xp_size(a) != 0:
         with np.errstate(divide='ignore', invalid='ignore', over='ignore'):
