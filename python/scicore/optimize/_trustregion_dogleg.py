@@ -1,4 +1,6 @@
 """Dog-leg trust-region optimization."""
+import math
+
 import rsnumpy as np
 import scicore.linalg
 from ._trustregion import (_minimize_trust_region, BaseQuadraticSubproblem)
@@ -55,8 +57,27 @@ class DoglegSubproblem(BaseQuadraticSubproblem):
         if self._newton_point is None:
             g = self.jac
             B = self.hess
-            cho_info = scipy.linalg.cho_factor(B)
-            self._newton_point = -scipy.linalg.cho_solve(cho_info, g)
+            # Cholesky factorization with an explicit positive-definiteness
+            # check: rsnumpy's factorizations do not reliably raise on a
+            # non-PD matrix, and the outer loop relies on LinAlgError.
+            L = np.linalg.cholesky(B)
+            L_rows = [list(map(float, row)) for row in np.asarray(L).tolist()]
+            for i in range(len(L_rows)):
+                if not math.isfinite(L_rows[i][i]) or L_rows[i][i] <= 0.0:
+                    raise np.linalg.LinAlgError(
+                        'the Hessian is not positive definite')
+            n = len(L_rows)
+            gl = [float(t) for t in np.asarray(g).tolist()]
+            # forward substitution L y = g, then L^T x = y
+            y = [0.0] * n
+            for i in range(n):
+                s = gl[i] - sum(L_rows[i][j] * y[j] for j in range(i))
+                y[i] = s / L_rows[i][i]
+            x = [0.0] * n
+            for i in range(n - 1, -1, -1):
+                s = y[i] - sum(L_rows[j][i] * x[j] for j in range(i + 1, n))
+                x[i] = s / L_rows[i][i]
+            self._newton_point = -np.array(x, dtype=np.float64)
         return self._newton_point
 
     def solve(self, trust_radius):
@@ -94,7 +115,7 @@ class DoglegSubproblem(BaseQuadraticSubproblem):
         # This is the optimum for the quadratic model function.
         # If it is inside the trust radius then return this point.
         p_best = self.newton_point()
-        if scipy.linalg.norm(p_best) < trust_radius:
+        if float(np.linalg.norm(p_best)) < trust_radius:
             hits_boundary = False
             return p_best, hits_boundary
 
@@ -104,7 +125,7 @@ class DoglegSubproblem(BaseQuadraticSubproblem):
 
         # If the Cauchy point is outside the trust region,
         # then return the point where the path intersects the boundary.
-        p_u_norm = scipy.linalg.norm(p_u)
+        p_u_norm = float(np.linalg.norm(p_u))
         if p_u_norm >= trust_radius:
             p_boundary = p_u * (trust_radius / p_u_norm)
             hits_boundary = True

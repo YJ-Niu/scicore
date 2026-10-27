@@ -84,7 +84,7 @@ class BaseQuadraticSubproblem:
     def jac_mag(self):
         """Magnitude of jacobian of objective function at current iteration."""
         if self._g_mag is None:
-            self._g_mag = scipy.linalg.norm(self.jac)
+            self._g_mag = float(np.linalg.norm(self.jac))
         return self._g_mag
 
     def get_boundaries_intersections(self, z, d, trust_radius):

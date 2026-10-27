@@ -66,6 +66,59 @@ def test_isotonic_regression_decreasing():
     assert list(res.blocks) == [0, 2, 3]
 
 
+def _quad2():
+    # f = 0.5 (4 x0^2 + 9 x1^2), minimum at the origin
+    def fun(x):
+        x = [float(t) for t in np.asarray(x).tolist()]
+        return 0.5 * (4.0 * x[0] ** 2 + 9.0 * x[1] ** 2)
+
+    def jac(x):
+        x = [float(t) for t in np.asarray(x).tolist()]
+        return np.array([4.0 * x[0], 9.0 * x[1]])
+
+    def hessp(x, p):
+        p = [float(t) for t in np.asarray(p).tolist()]
+        return np.array([4.0 * p[0], 9.0 * p[1]])
+
+    def hess(x):
+        return np.array([[4.0, 0.0], [0.0, 9.0]])
+
+    return fun, jac, hessp, hess
+
+
+def test_minimize_trust_krylov():
+    fun, jac, hessp, hess = _quad2()
+    # Cauchy-point subproblem (hessp only)
+    res = sopt.minimize(fun, [3.0, -2.0], method='trust-krylov',
+                        jac=jac, hessp=hessp)
+    assert res.success
+    assert np.allclose(res.x, [0.0, 0.0], atol=1e-3)
+    # dogleg subproblem (full Hessian): quadratically fast
+    res = sopt.minimize(fun, [3.0, -2.0], method='trust-krylov',
+                        jac=jac, hess=hess)
+    assert res.success
+    assert np.allclose(res.x, [0.0, 0.0], atol=1e-5)
+    assert res.nit < 10
+
+
+def test_minimize_trust_ncg():
+    fun, jac, hessp, hess = _quad2()
+    for extra in (dict(hessp=hessp), dict(hess=hess)):
+        res = sopt.minimize(fun, [3.0, -2.0], method='trust-ncg',
+                            jac=jac, **extra)
+        assert res.success
+        assert np.allclose(res.x, [0.0, 0.0], atol=1e-3)
+
+
+def test_minimize_dogleg():
+    fun, jac, hessp, hess = _quad2()
+    res = sopt.minimize(fun, [3.0, -2.0], method='dogleg',
+                        jac=jac, hess=hess)
+    assert res.success
+    assert np.allclose(res.x, [0.0, 0.0], atol=1e-5)
+    assert res.nit < 10
+
+
 def test_quadratic_assignment():
     # brute-force optimum over all 24 permutations is 4.0
     a = [[0.0, 1.0, 1.0, 0.0],

@@ -105,7 +105,7 @@ class CGSteihaugSubproblem(BaseQuadraticSubproblem):
             r_squared = np.dot(r, r)
             alpha = r_squared / dBd
             z_next = z + alpha * d
-            if scipy.linalg.norm(z_next) >= trust_radius:
+            if math.sqrt(np.dot(z_next, z_next)) >= trust_radius:
                 # Find t >= 0 to get the boundary point such that
                 # ||z + t d|| == trust_radius
                 ta, tb = self.get_boundaries_intersections(z, d, trust_radius)
