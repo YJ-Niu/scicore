@@ -3,6 +3,7 @@ import rsnumpy as np
 from .arpack.arpack import eigsh
 
 from scicore._lib._util import _transition_to_rng, check_random_state
+from scicore.sparse import issparse
 from scicore.sparse.linalg._interface import LinearOperator, aslinearoperator
 from scicore.sparse.linalg._eigen.lobpcg import lobpcg
 from scicore.sparse.linalg._svdp import _svdp
@@ -425,10 +426,41 @@ def svds(A, k=6, ncv=None, tol=0, which='LM', v0=None,
     True
 
     """
+    A_input = A
     args = _iv(A, k, ncv, tol, which, v0, maxiter, return_singular_vectors,
                solver, rng)
     (A, k, ncv, tol, which, v0, maxiter,
      return_singular_vectors, solver, rng) = args
+
+    if solver == 'arpack' and not isinstance(A_input, LinearOperator):
+        # The ARPACK driver is not yet ported; for explicit input the
+        # full SVD is exact — select the k requested singular triplets
+        # (returned in ascending order, as ARPACK/LOBPCG do).
+        Ad = A_input.toarray() if issparse(A_input) else np.asarray(A_input)
+        u, s, vh = svd(Ad, full_matrices=False, overwrite_a=False)
+        m, n = Ad.shape
+        s_all = [float(x) for x in np.asarray(s).tolist()]
+        # rsnumpy pads a rectangular input to a square before the SVD, so the
+        # true singular values are the first min(m, n) (descending); the left
+        # vectors are the first m rows of u, the right vectors the first n
+        # columns of vh.
+        nsv = min(m, n)
+        if which == 'LM':
+            sel = list(range(k - 1, -1, -1))  # k largest, ascending order
+        else:  # 'SM'
+            sel = list(range(nsv - 1, nsv - k - 1, -1))  # k smallest, asc
+        u_rows = np.asarray(u).tolist()
+        vh_rows = np.asarray(vh).tolist()
+        u_sel = np.array([[u_rows[r][j] for j in sel] for r in range(m)])
+        vh_sel = np.array([[vh_rows[j][c] for c in range(n)] for j in sel])
+        s_sel = np.array([s_all[j] for j in sel], dtype=np.float64)
+        if return_singular_vectors is False:
+            return s_sel
+        if return_singular_vectors == 'u':
+            return u_sel, s_sel, None
+        if return_singular_vectors == 'vh':
+            return None, s_sel, vh_sel
+        return u_sel, s_sel, vh_sel
 
     largest = (which == 'LM')
     n, m = A.shape

@@ -60,6 +60,49 @@ def test_eigsh():
     assert np.asarray(v).shape == (3, 2)
 
 
+def test_eigs():
+    # 5x5 upper triangular (eigenvalues 2..6); ARPACK requires k < N - 1
+    a = sps.csr_matrix(np.array([[2., 1., 0., 0., 0.],
+                                 [0., 3., 1., 0., 0.],
+                                 [0., 0., 4., 1., 0.],
+                                 [0., 0., 0., 5., 1.],
+                                 [0., 0., 0., 0., 6.]]))
+    w, v = sps.linalg.eigs(a, k=2, which="LM")
+    w_list = [complex(x) for x in np.asarray(w).tolist()]
+    assert np.allclose(sorted(x.real for x in w_list), [5.0, 6.0])
+    A = [[2., 1., 0., 0., 0.], [0., 3., 1., 0., 0.], [0., 0., 4., 1., 0.],
+         [0., 0., 0., 5., 1.], [0., 0., 0., 0., 6.]]
+    v_rows = np.asarray(v).tolist()
+    for i in range(2):
+        col = [v_rows[r][i] for r in range(5)]
+        Av = [sum(A[r][c] * col[c] for c in range(5)) for r in range(5)]
+        wv = [w_list[i] * col[c] for c in range(5)]
+        assert max(abs(Av[r] - wv[r]) for r in range(5)) < 1e-8
+    w_sm = sps.linalg.eigs(a, k=2, which="SM", return_eigenvectors=False)
+    assert np.allclose(sorted(complex(x).real for x in np.asarray(w_sm).tolist()),
+                       [2.0, 3.0])
+
+
+def test_svds():
+    # diagonal 4x4: singular values {3, 2, 1, 0}
+    A = [[1., 0., 0., 0.], [0., 2., 0., 0.], [0., 0., 3., 0.], [0., 0., 0., 0.]]
+    u, s, vh = sps.linalg.svds(np.array(A), k=2)
+    s_list = np.asarray(s).tolist()
+    assert np.allclose(s_list, [2.0, 3.0])
+    # rank-2 reconstruction = A with the smallest singular direction removed
+    u_rows = np.asarray(u).tolist()
+    vh_rows = np.asarray(vh).tolist()
+    expected = [[0., 0., 0., 0.], [0., 2., 0., 0.], [0., 0., 3., 0.],
+                [0., 0., 0., 0.]]
+    for r in range(4):
+        for c in range(4):
+            val = sum(u_rows[r][j] * s_list[j] * vh_rows[j][c] for j in range(2))
+            assert abs(val - expected[r][c]) < 1e-8
+    s_sp = sps.linalg.svds(sps.csr_matrix(np.array(A)), k=2,
+                           return_singular_vectors=False)
+    assert np.allclose(np.asarray(s_sp).tolist(), [2.0, 3.0])
+
+
 def test_dijkstra():
     # directed chain 0 -> 1 (w=1) -> 2 (w=2)
     g = sps.csr_matrix(np.array([[0.0, 1.0, 0.0], [0.0, 0.0, 2.0], [0.0, 0.0, 0.0]]))

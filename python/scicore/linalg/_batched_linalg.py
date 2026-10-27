@@ -274,13 +274,17 @@ def _lu(a1, permute_l, overwrite_a):
 
 
 def _eig(a1, left, right, overwrite_a, flag, b1=None):
-    """Pure-rsnumpy general eigenvalue problem (delegates to
-    rsnumpy.linalg.eig).
+    """Pure-Python general eigenvalue problem (QR iteration backend).
 
-    Left eigenvectors are the right eigenvectors of the transpose (the
-    rsnumpy backend is real-valued).  The generalized problem (``b1`` given)
-    and stacked input remain unimplemented.
+    The rsnumpy core ``eig`` only supports 2x2/3x3 and does not return
+    eigenvectors, so all sizes go through ``_eig_qr``: explicit QR
+    iteration with Wilkinson shifts for the eigenvalues, SVD null-space
+    for the eigenvectors.  Left eigenvectors are the right eigenvectors
+    of the transpose (the backend is real-valued).  The generalized
+    problem (``b1`` given) and stacked input remain unimplemented.
     """
+    from scicore.linalg import _eig_qr
+
     if b1 is not None:
         raise NotImplementedError(_UNIMPLEMENTED.format(name='_eig',
                                                         driver='ggev'))
@@ -288,13 +292,31 @@ def _eig(a1, left, right, overwrite_a, flag, b1=None):
     if a1.ndim != 2 or a1.shape[0] != a1.shape[1]:
         raise NotImplementedError(_UNIMPLEMENTED.format(name='_eig',
                                                         driver='geev'))
-    w, vr = np.linalg.eig(a1)
-    vl = None
-    if left:
-        _wl, vl = np.linalg.eig(a1.T)
+    A = [[float(x) for x in row] for row in a1.tolist()]
+    n = len(A)
+    w_list = _eig_qr.eigenvalues(A)
+    all_real = all(w.imag == 0.0 for w in w_list)
+    if right:
+        vr_mat = _eig_qr.eigenvector_matrix(A, w_list)
     else:
-        vr = None
-    return np.asarray(w), None, vl, vr, []
+        vr_mat = None
+    if left:
+        # scipy convention: a.H @ vl[:, i] = conj(w[i]) @ vl[:, i], i.e. the
+        # left eigenvector for w[i] is the right eigenvector of the transpose
+        # for the conjugate eigenvalue.
+        AT = [[A[s][r] for s in range(n)] for r in range(n)]
+        vl_mat = _eig_qr.eigenvector_matrix(
+            AT, [w.conjugate() for w in w_list])
+    else:
+        vl_mat = None
+    if all_real:
+        w_arr = np.array([float(w.real) for w in w_list], dtype=np.float64)
+    else:
+        w_arr = np.array([complex(w) for w in w_list])
+    return (w_arr, None,
+            np.array(vl_mat) if vl_mat is not None else None,
+            np.array(vr_mat) if vr_mat is not None else None,
+            [])
 
 
 def _as_svd_singular_values(s):

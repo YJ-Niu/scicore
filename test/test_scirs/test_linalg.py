@@ -71,6 +71,48 @@ def test_eig():
     assert np.allclose(np.sort(np.real(w)), [1.0, 3.0])
 
 
+def test_eig_general():
+    # 5x5 upper triangular: the eigenvalues are the diagonal entries
+    a = np.array([[2., 1., 0., 0., 0.],
+                  [0., 3., 1., 0., 0.],
+                  [0., 0., 4., 1., 0.],
+                  [0., 0., 0., 5., 1.],
+                  [0., 0., 0., 0., 6.]])
+    w = sla.eig(a, right=False)
+    assert np.allclose(sorted(np.asarray(w).tolist()), [2., 3., 4., 5., 6.])
+    w, v = sla.eig(a)
+    A = [[2., 1., 0., 0., 0.], [0., 3., 1., 0., 0.], [0., 0., 4., 1., 0.],
+         [0., 0., 0., 5., 1.], [0., 0., 0., 0., 6.]]
+    v_rows = np.asarray(v).tolist()
+    w_list = [complex(x) for x in np.asarray(w).tolist()]
+    for i in range(5):
+        col = [v_rows[r][i] for r in range(5)]
+        Av = [sum(A[r][c] * col[c] for c in range(5)) for r in range(5)]
+        wv = [w_list[i] * col[c] for c in range(5)]
+        assert max(abs(Av[r] - wv[r]) for r in range(5)) < 1e-9
+
+
+def test_eig_complex_pair():
+    # block diag([0 -2; 2 0], [2 1; 1 2]): eigenvalues {±2j, 1, 3}
+    a = np.array([[0., -2., 0., 0.],
+                  [2., 0., 0., 0.],
+                  [0., 0., 2., 1.],
+                  [0., 0., 1., 2.]])
+    w, v = sla.eig(a)
+    w_sorted = sorted((complex(x) for x in np.asarray(w).tolist()),
+                      key=lambda z: (z.real, z.imag))
+    expected = [complex(0., -2.), complex(0., 2.), complex(1.), complex(3.)]
+    assert all(abs(x - y) < 1e-8 for x, y in zip(w_sorted, expected))
+    A = [[0., -2., 0., 0.], [2., 0., 0., 0.], [0., 0., 2., 1.], [0., 0., 1., 2.]]
+    v_rows = np.asarray(v).tolist()
+    w_list = [complex(x) for x in np.asarray(w).tolist()]
+    for i in range(4):
+        col = [v_rows[r][i] for r in range(4)]
+        Av = [sum(A[r][c] * col[c] for c in range(4)) for r in range(4)]
+        wv = [w_list[i] * col[c] for c in range(4)]
+        assert max(abs(Av[r] - wv[r]) for r in range(4)) < 1e-9
+
+
 def test_eigvalsh():
     a = np.array([[2.0, 1.0], [1.0, 3.0]])
     expected = ((5.0 - np.sqrt(5.0)) / 2, (5.0 + np.sqrt(5.0)) / 2)

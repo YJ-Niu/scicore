@@ -1372,6 +1372,41 @@ def eigs(A, k=6, M=None, sigma=None, which='LM', v0=None,
 
         return eig(A, b=M, right=return_eigenvectors)
 
+    if sigma is None and M is None \
+            and str(which).upper() in ('LM', 'SM', 'LR', 'SR', 'LI', 'SI') \
+            and not isinstance(A, LinearOperator):
+        # The ARPACK driver is not yet ported; for explicit input the
+        # dense nonsymmetric solver (``scicore.linalg.eig``) is exact, so
+        # use it and select the requested k eigenpairs.
+        which_u = str(which).upper()
+        k_i = int(k)
+        dense = A.toarray() if issparse(A) else np.asarray(A)
+        if return_eigenvectors:
+            w_all, v_all = eig(dense, right=True)
+        else:
+            w_all = eig(dense, right=False)
+        w_list = [complex(x) for x in np.asarray(w_all).tolist()]
+        if which_u == 'LM':
+            sel = sorted(range(n), key=lambda i: (-abs(w_list[i]), i))[:k_i]
+        elif which_u == 'SM':
+            sel = sorted(range(n), key=lambda i: (abs(w_list[i]), i))[:k_i]
+        elif which_u == 'LR':
+            sel = sorted(range(n), key=lambda i: (-w_list[i].real, i))[:k_i]
+        elif which_u == 'SR':
+            sel = sorted(range(n), key=lambda i: (w_list[i].real, i))[:k_i]
+        elif which_u == 'LI':
+            sel = sorted(range(n), key=lambda i: (-w_list[i].imag, i))[:k_i]
+        else:  # 'SI'
+            sel = sorted(range(n), key=lambda i: (w_list[i].imag, i))[:k_i]
+        # Return in ascending algebraic order (real part, then imaginary).
+        sel = sorted(sel, key=lambda i: (w_list[i].real, w_list[i].imag))
+        w_sel = np.array([w_list[i] for i in sel])
+        if return_eigenvectors:
+            v_rows = np.asarray(v_all).tolist()
+            v_sel = np.array([[v_rows[r][i] for i in sel] for r in range(n)])
+            return w_sel, v_sel
+        return w_sel
+
     if sigma is None:
         matvec = aslinearoperator(A).matvec
 
