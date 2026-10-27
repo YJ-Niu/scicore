@@ -191,3 +191,57 @@ def test_nnls():
 def test_dual_annealing():
     res = sopt.dual_annealing(lambda x: (x[0] - 1) ** 2, [(-2.0, 2.0)])
     assert np.isclose(res.x[0], 1.0, atol=0.2)
+
+
+def test_minimize_slsqp_eq_only():
+    # min sum (xi-2)^2 s.t. x0+x1+x2=1, x0+x1-x2=0
+    res = sopt.minimize(
+        lambda x: (x[0] - 2) ** 2 + (x[1] - 2) ** 2 + (x[2] - 2) ** 2,
+        [0.0, 0.0, 0.0], method="SLSQP",
+        constraints=[
+            {"type": "eq", "fun": lambda x: x[0] + x[1] + x[2] - 1,
+             "jac": lambda x: [1.0, 1.0, 1.0]},
+            {"type": "eq", "fun": lambda x: x[0] + x[1] - x[2],
+             "jac": lambda x: [1.0, 1.0, -1.0]},
+        ],
+    )
+    assert res.success
+    assert np.allclose(res.x, [0.25, 0.25, 0.5], atol=1e-6)
+
+
+def test_minimize_slsqp_ineq_only():
+    # min (x0-2)^2 + (x1-2)^2 s.t. 1 - x0 - x1 >= 0 -> [0.5, 0.5]
+    res = sopt.minimize(
+        lambda x: (x[0] - 2) ** 2 + (x[1] - 2) ** 2,
+        [0.0, 0.0], method="SLSQP",
+        constraints=[{"type": "ineq", "fun": lambda x: 1 - (x[0] + x[1]),
+                      "jac": lambda x: [-1.0, -1.0]}],
+    )
+    assert res.success
+    assert np.allclose(res.x, [0.5, 0.5], atol=1e-6)
+
+
+def test_minimize_slsqp_mixed():
+    # min (x0-3)^2 + (x1-3)^2 s.t. x0+x1 <= 4, 1 <= x0 <= 2, x1 >= 0 -> [2, 2]
+    res = sopt.minimize(
+        lambda x: (x[0] - 3) ** 2 + (x[1] - 3) ** 2,
+        [0.0, 0.0], method="SLSQP",
+        constraints=[{"type": "ineq", "fun": lambda x: 4 - (x[0] + x[1]),
+                      "jac": lambda x: [-1.0, -1.0]}],
+        bounds=[(1.0, 2.0), (0.0, None)],
+    )
+    assert res.success
+    assert np.allclose(res.x, [2.0, 2.0], atol=1e-6)
+
+
+def test_minimize_slsqp_eq_bounds():
+    # min (x0-4)^2 + (x1-4)^2 s.t. x0+x1 = 3, x >= 0 -> [1.5, 1.5]
+    res = sopt.minimize(
+        lambda x: (x[0] - 4) ** 2 + (x[1] - 4) ** 2,
+        [0.0, 0.0], method="SLSQP",
+        constraints=[{"type": "eq", "fun": lambda x: x[0] + x[1] - 3,
+                      "jac": lambda x: [1.0, 1.0]}],
+        bounds=[(0.0, None), (0.0, None)],
+    )
+    assert res.success
+    assert np.allclose(res.x, [1.5, 1.5], atol=1e-6)

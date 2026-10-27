@@ -216,6 +216,18 @@ def fmin_slsqp(func, x0, eqcons=(), f_eqcons=None, ieqcons=(), f_ieqcons=None,
         return res['x']
 
 
+def _clip_to_bounds(x, lo, hi):
+    """Elementwise clip of ``x`` to [lo, hi].  rsnumpy's np.clip
+    mishandles array bounds, so clip by hand."""
+    x_l = [float(t) for t in x.tolist()]
+    lo_l = ([float(lo)] * len(x_l)) if isinstance(lo, (int, float)) \
+        else [float(t) for t in lo.tolist()]
+    hi_l = ([float(hi)] * len(x_l)) if isinstance(hi, (int, float)) \
+        else [float(t) for t in hi.tolist()]
+    return np.array([min(max(v, l), h)
+                     for v, l, h in zip(x_l, lo_l, hi_l)], dtype=x.dtype)
+
+
 def _minimize_slsqp(func, x0, args=(), jac=None, bounds=None,
                     constraints=(),
                     maxiter=100, ftol=1.0E-6, iprint=1, disp=False,
@@ -318,7 +330,8 @@ def _minimize_slsqp(func, x0, args=(), jac=None, bounds=None,
         new_bounds = old_bound_to_new(bounds)
 
     # clip the initial guess to bounds, otherwise ScalarFunction doesn't work
-    x = np.clip(x, new_bounds[0], new_bounds[1])
+    # (elementwise: rsnumpy np.clip mishandles array bounds)
+    x = _clip_to_bounds(x, new_bounds[0], new_bounds[1])
 
     # Constraints are triaged per type into a dictionary of tuples
     if isinstance(constraints, dict):
@@ -393,31 +406,35 @@ def _minimize_slsqp(func, x0, args=(), jac=None, bounds=None,
     # n = The number of independent variables
     n = len(x)
 
-    # Decompose bounds into xl and xu
+    # Decompose bounds into xl and xu (pure-Python construction: rsnumpy
+    # cannot build an array from a list of (lo, up) tuples)
     if bounds is None or len(bounds) == 0:
         xl = np.empty(n, dtype=float)
         xu = np.empty(n, dtype=float)
         xl.fill(np.nan)
         xu.fill(np.nan)
     else:
-        bnds = np.array([(_arr_to_scalar(lo), _arr_to_scalar(up))
-                      for (lo, up) in bounds], float)
-        if bnds.shape[0] != n:
+        if len(bounds) != n:
             raise IndexError('SLSQP Error: the length of bounds is not '
                              'compatible with that of x0.')
-
-        with np.errstate(invalid='ignore'):
-            bnderr = bnds[:, 0] > bnds[:, 1]
-
-        if bnderr.any():
-            raise ValueError("SLSQP Error: lb > ub in bounds "
-                             f"{', '.join(str(b) for b in bnderr)}.")
-        xl, xu = bnds[:, 0].copy(), bnds[:, 1].copy()
+        xl_l = [float('nan')] * n
+        xu_l = [float('nan')] * n
+        for i, (lo, up) in enumerate(bounds):
+            lo = _arr_to_scalar(lo)
+            up = _arr_to_scalar(up)
+            lo = float(lo) if lo is not None else float('-inf')
+            up = float(up) if up is not None else float('inf')
+            if lo > up:
+                raise ValueError("SLSQP Error: lb > ub in bounds "
+                                 f"{(lo, up)}.")
+            if lo == lo and lo not in (float('inf'), float('-inf')):
+                xl_l[i] = float(lo)
+            if up == up and up not in (float('inf'), float('-inf')):
+                xu_l[i] = float(up)
 
         # Mark infinite bounds with nans; the C code expects this
-        infbnd = ~np.isfinite(bnds)
-        xl[infbnd[:, 0]] = np.nan
-        xu[infbnd[:, 1]] = np.nan
+        xl = np.array(xl_l, float)
+        xu = np.array(xu_l, float)
 
     # ScalarFunction provides function and gradient evaluation
     sf = _prepare_scalar_function(func, x, jac=jac, args=args, epsilon=eps,

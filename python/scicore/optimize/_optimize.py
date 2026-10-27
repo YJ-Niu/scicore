@@ -330,11 +330,23 @@ def _clip_x_for_func(func, bounds):
 
 
 def _check_clip_x(x, bounds):
-    if (x < bounds[0]).any() or (x > bounds[1]).any():
+    # Elementwise comparison/clip: rsnumpy np.clip mishandles array
+    # bounds (and its comparison/any chain is unreliable here).
+    x_l = [float(t) for t in x.tolist()]
+    if isinstance(bounds[0], (int, float)):
+        lo_l = [float(bounds[0])] * len(x_l)
+    else:
+        lo_l = [float(t) for t in bounds[0].tolist()]
+    if isinstance(bounds[1], (int, float)):
+        hi_l = [float(bounds[1])] * len(x_l)
+    else:
+        hi_l = [float(t) for t in bounds[1].tolist()]
+    if any(v < l or v > h for v, l, h in zip(x_l, lo_l, hi_l)):
         warnings.warn("Values in x were outside bounds during a "
                       "minimize step, clipping to bounds",
                       RuntimeWarning, stacklevel=3)
-        x = np.clip(x, bounds[0], bounds[1])
+        x = np.array([min(max(v, l), h)
+                      for v, l, h in zip(x_l, lo_l, hi_l)], dtype=x.dtype)
         return x
 
     return x
