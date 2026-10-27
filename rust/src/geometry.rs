@@ -73,9 +73,7 @@ fn convex_hull_2d(pts: &[Pt]) -> PyResult<(Vec<usize>, f64)> {
     // Pivot: lowest y, then lowest x.
     let mut pivot = 0usize;
     for i in 1..n {
-        if pts[i].1 < pts[pivot].1
-            || (pts[i].1 == pts[pivot].1 && pts[i].0 < pts[pivot].0)
-        {
+        if pts[i].1 < pts[pivot].1 || (pts[i].1 == pts[pivot].1 && pts[i].0 < pts[pivot].0) {
             pivot = i;
         }
     }
@@ -197,13 +195,16 @@ fn delaunay_2d(pts: &[Pt]) -> (Vec<Tri>, Vec<Pt>) {
     all.push(s2);
     let (sn0, sn1, sn2) = (n, n + 1, n + 2);
 
-    let mut tris: Vec<Tri> = vec![Tri { a: sn0, b: sn2, c: sn1 }];
-    for p in 0..n {
-        let pp: Pt = pts[p];
+    let mut tris: Vec<Tri> = vec![Tri {
+        a: sn0,
+        b: sn2,
+        c: sn1,
+    }];
+    for (p, pp) in pts.iter().enumerate().take(n) {
         let mut bad: Vec<bool> = vec![false; tris.len()];
         let mut bad_list: Vec<usize> = Vec::new();
         for (ti, tri) in tris.iter().enumerate() {
-            if incircle_contains(tri, &all, pp) {
+            if incircle_contains(tri, &all, *pp) {
                 bad[ti] = true;
                 bad_list.push(ti);
             }
@@ -222,7 +223,7 @@ fn delaunay_2d(pts: &[Pt]) -> (Vec<Tri>, Vec<Pt>) {
         }
         for (&(u, v), &cnt) in &edge_count {
             if cnt == 1 {
-                let t = if cross(all[u], all[v], pp) >= 0.0 {
+                let t = if cross(all[u], all[v], *pp) >= 0.0 {
                     Tri { a: u, b: v, c: p }
                 } else {
                     Tri { a: v, b: u, c: p }
@@ -252,6 +253,7 @@ fn delaunay_2d(pts: &[Pt]) -> (Vec<Tri>, Vec<Pt>) {
 /// Returns (all vertices including the synthetic ones at infinity, finite
 /// vertices, ridge vertex index pairs, ridge endpoint coordinates, and
 /// per-point cell vertex lists); unbounded ridge ends use -1 / -1.0.
+#[allow(clippy::type_complexity)]
 fn voronoi_2d(
     pts: &[Pt],
     tris: &[Tri],
@@ -280,9 +282,10 @@ fn voronoi_2d(
     let mut finite: Vec<Pt> = Vec::new();
     let mut tri_finite: Vec<usize> = Vec::new();
     for &c in centers {
-        if let Some(pos) = finite.iter().position(|&f| {
-            (f.0 - c.0).abs() <= finite_tol && (f.1 - c.1).abs() <= finite_tol
-        }) {
+        if let Some(pos) = finite
+            .iter()
+            .position(|&f| (f.0 - c.0).abs() <= finite_tol && (f.1 - c.1).abs() <= finite_tol)
+        {
             tri_finite.push(pos);
         } else {
             tri_finite.push(finite.len());
@@ -313,9 +316,8 @@ fn voronoi_2d(
         let cc = finite[cc_idx];
         // Far end of the ridge: the second circumcenter (interior edge) or a
         // synthetic point at infinity (hull edge).
-        let end_idx: usize;
-        if ti_list.len() == 2 {
-            end_idx = tri_finite[ti_list[1]];
+        let end_idx = if ti_list.len() == 2 {
+            tri_finite[ti_list[1]]
         } else {
             let t = tris[ti0];
             let w = [t.a, t.b, t.c]
@@ -335,23 +337,17 @@ fn voronoi_2d(
                 dy = -dy;
             }
             let key = ((dx * 1.0e6).round() as i64, (dy * 1.0e6).round() as i64);
-            end_idx = if let Some(&existing) = inf_index.get(&key) {
+            if let Some(&existing) = inf_index.get(&key) {
                 existing
             } else {
                 inf_index.insert(key, verts.len());
                 verts.push((cc.0 + dx * r_inf, cc.1 + dy * r_inf));
                 verts.len() - 1
-            };
-        }
+            }
+        };
         let bounded = ti_list.len() == 2;
-        ridge_vertices.push((
-            cc_idx as i64,
-            if bounded { end_idx as i64 } else { -1 },
-        ));
-        ridge_points.push((
-            cc,
-            if bounded { Some(finite[end_idx]) } else { None },
-        ));
+        ridge_vertices.push((cc_idx as i64, if bounded { end_idx as i64 } else { -1 }));
+        ridge_points.push((cc, if bounded { Some(finite[end_idx]) } else { None }));
         for &ti in ti_list {
             for pv in [tris[ti].a, tris[ti].b, tris[ti].c] {
                 cell_verts[pv].insert(cc_idx);
@@ -416,10 +412,7 @@ fn geometry_convex_hull_2d(bytes: Vec<u8>, n: usize) -> PyResult<(Vec<i64>, f64,
 /// Returns (flattened simplices, 3 per triangle; vertex indices; flattened
 /// circumcenters, 2 per triangle).
 #[pyfunction]
-fn geometry_delaunay_2d(
-    bytes: Vec<u8>,
-    n: usize,
-) -> PyResult<(Vec<i64>, Vec<i64>, Vec<f64>)> {
+fn geometry_delaunay_2d(bytes: Vec<u8>, n: usize) -> PyResult<(Vec<i64>, Vec<i64>, Vec<f64>)> {
     let pts = points_from_bytes(&bytes, n, 2)?;
     check_distinct(&pts)?;
     let (tris, centers) = delaunay_2d(&pts);
@@ -450,6 +443,7 @@ fn geometry_delaunay_2d(
 /// ridge vertex indices; ridge point coordinates; per-point cell vertex
 /// lists); unbounded ridge ends are -1 / -1.0.
 #[pyfunction]
+#[allow(clippy::type_complexity)]
 fn geometry_voronoi_2d(
     bytes: Vec<u8>,
     n: usize,
