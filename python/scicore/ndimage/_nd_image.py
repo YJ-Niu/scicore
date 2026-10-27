@@ -108,39 +108,25 @@ def _boundary_index(cc, n, mode):
         return None
     if n <= 1:
         return 0
-    if cc < 0:
-        if mode == _MODE_MIRROR:
-            sz2 = 2 * n - 2
-            cc = sz2 * ((-cc) // sz2) + cc
-            return cc + sz2 if cc <= 1 - n else -cc
-        if mode == _MODE_REFLECT:
-            sz2 = 2 * n
-            if cc < -sz2:
-                cc = sz2 * ((-cc) // sz2) + cc
-            return cc + sz2 if cc < -n else -cc - 1
-        if mode in (_MODE_WRAP, _MODE_GRID_WRAP):
-            cc += n * ((-cc) // n)
-            if cc < 0:
-                cc += n
-            return cc
-        if mode == _MODE_NEAREST:
-            return 0
-        return None
-    if cc >= n:
-        if mode == _MODE_MIRROR:
-            sz2 = 2 * n - 2
-            cc -= sz2 * (cc // sz2)
-            return sz2 - cc if cc >= n else cc
-        if mode == _MODE_REFLECT:
-            sz2 = 2 * n
-            cc -= sz2 * (cc // sz2)
-            return sz2 - cc - 1 if cc >= n else cc
-        if mode in (_MODE_WRAP, _MODE_GRID_WRAP):
-            return cc - n * (cc // n)
-        if mode == _MODE_NEAREST:
-            return n - 1
-        return None
-    return cc
+    if 0 <= cc < n:
+        return cc
+    if mode == _MODE_MIRROR:
+        # scipy mirror: d e d c b a | a b c d e d
+        # (edge duplicated, period 2*n)
+        sz2 = 2 * n
+        t = cc % sz2
+        return t if t < n else sz2 - 1 - t
+    if mode == _MODE_REFLECT:
+        # scipy reflect: d e d c b | a b c d e d
+        # (edge not duplicated, period 2*(n-1))
+        sz2 = 2 * n - 2
+        t = cc % sz2
+        return t if t <= n - 1 else sz2 - t
+    if mode in (_MODE_WRAP, _MODE_GRID_WRAP):
+        return cc % n
+    if mode == _MODE_NEAREST:
+        return 0 if cc < 0 else n - 1
+    return None
 
 
 def _line_value(line, k, n, mode, cval):
@@ -857,12 +843,99 @@ def rank_filter(input, rank, footprint, output, mode, cval, origin=0):
 
 
 def generic_filter1d(input, function, filter_size, axis, output, mode, cval,
-                     origin=0):
-    raise NotImplementedError("generic_filter1d not yet ported to Rust/rsnumpy")
+                     origin=0, extra_arguments=(), extra_keywords=None):
+    """1-D generic filter along ``axis`` (scipy ni_filters.c
+    NI_GenericFilter1D).  ``function`` is called once per line as
+    ``function(input_line, output_line, *extra_arguments,
+    **extra_keywords)``: ``input_line`` is the line extended to
+    ``L + filter_size - 1`` samples according to the boundary mode,
+    ``output_line`` (length ``L``) must be filled in place.
+    """
+    input = np.asarray(input)
+    output = np.asarray(output)
+    if extra_keywords is None:
+        extra_keywords = {}
+    ndim = input.ndim
+    shape = list(input.shape)
+    L = shape[axis]
+    fs = int(filter_size)
+    origin = int(origin)
+    line_data = input.tolist()
+
+    others = [h for h in range(ndim) if h != axis]
+    for oidx in product(*[range(shape[h]) for h in others]):
+        base = [0] * ndim
+        for h, o in zip(others, oidx):
+            base[h] = o
+        line = []
+        for k in range(L):
+            node = line_data
+            for h in range(ndim):
+                node = node[k if h == axis else base[h]]
+            line.append(node)
+        ext = [_line_value(line, j - fs // 2 - origin, L, mode, cval)
+               for j in range(L + fs - 1)]
+        in_arr = np.array(ext, dtype=np.float64)
+        out_arr = np.zeros(L, dtype=np.float64)
+        function(in_arr, out_arr, *extra_arguments, **extra_keywords)
+        vals = [float(t) for t in np.asarray(out_arr).tolist()]
+        for off in range(L):
+            q = base[:]
+            q[axis] = off
+            _set_elem(output, tuple(q), vals[off])
 
 
-def generic_filter(input, function, footprint, output, mode, cval, origin=0):
-    raise NotImplementedError("generic_filter not yet ported to Rust/rsnumpy")
+def generic_filter(input, function, footprint, output, mode, cval, origins,
+                   extra_arguments=(), extra_keywords=None):
+    """N-D generic filter (scipy ni_filters.c NI_GenericFilter).
+    ``function`` is called once per pixel as
+    ``function(buffer, *extra_arguments, **extra_keywords)`` where
+    ``buffer`` is the 1-D array of the (boundary-extended) footprint
+    values at that pixel; its return value is the output pixel.
+    """
+    input = np.asarray(input)
+    output = np.asarray(output)
+    footprint = np.asarray(footprint)
+    if extra_keywords is None:
+        extra_keywords = {}
+    ndim = input.ndim
+    fshape = list(footprint.shape)
+    origins = _normalize_origin(origins, ndim)
+    in_shape = list(input.shape)
+    line_data = input.tolist()
+
+    positions = []
+    for flat in range(footprint.size):
+        sp = _unravel(flat, fshape)
+        if bool(footprint[sp]):
+            positions.append(sp)
+
+    n_out = 1
+    for d in in_shape:
+        n_out *= d
+    for flat in range(n_out):
+        p = _unravel(flat, in_shape)
+        buf = []
+        for sp in positions:
+            mapped = []
+            is_cval = False
+            for h in range(ndim):
+                cc = p[h] + sp[h] - fshape[h] // 2 - origins[h]
+                e = _boundary_index(cc, in_shape[h], mode)
+                if e is None:
+                    is_cval = True
+                    break
+                mapped.append(e)
+            if is_cval:
+                buf.append(float(cval))
+            else:
+                node = line_data
+                for h in range(ndim):
+                    node = node[mapped[h]]
+                buf.append(float(node))
+        buf_arr = np.array(buf, dtype=np.float64)
+        res = function(buf_arr, *extra_arguments, **extra_keywords)
+        _set_elem(output, p, float(res))
 
 
 # ---------------------------------------------------------------------------

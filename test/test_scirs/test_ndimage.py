@@ -209,3 +209,102 @@ def test_fourier_gaussian_real_fft_path():
                 for i in range(N)]
     for i in range(N):
         assert abs(yr[i].real - expected[i]) < 1e-9
+
+
+# ---------------- generic filters ----------------
+
+def test_boundary_index_modes():
+    # scipy conventions:
+    # reflect (d e d c b | a b c d e d, period 2*(n-1), edge not duplicated)
+    # mirror  (d e d c b a | a b c d e d, period 2*n, edge duplicated)
+    from scicore.ndimage._nd_image import _boundary_index
+    assert [_boundary_index(i, 5, 2) for i in (-2, -1, 5, 6)] == [2, 1, 3, 2]
+    assert [_boundary_index(i, 5, 3) for i in (-2, -1, 5, 6)] == [1, 0, 4, 3]
+    assert [_boundary_index(i, 3, 2) for i in (-2, -1, 3, 4)] == [2, 1, 1, 0]
+    assert [_boundary_index(i, 3, 3) for i in (-2, -1, 3, 4)] == [1, 0, 2, 1]
+    assert [_boundary_index(i, 5, 0) for i in (-3, 7)] == [0, 4]
+    assert [_boundary_index(i, 5, 1) for i in (-3, 7)] == [2, 2]
+
+
+def _line_range(input_line, output_line):
+    il = [float(t) for t in np.asarray(input_line).tolist()]
+    L = len(output_line)
+    fs = len(il) - L + 1
+    for i in range(L):
+        w = il[i:i + fs]
+        output_line[i] = max(w) - min(w)
+
+
+def _line_sum(input_line, output_line):
+    il = [float(t) for t in np.asarray(input_line).tolist()]
+    L = len(output_line)
+    fs = len(il) - L + 1
+    for i in range(L):
+        output_line[i] = sum(il[i:i + fs])
+
+
+def test_generic_filter1d_range():
+    # docstring example: range in a sliding window of 3
+    x = np.array([1.0, 2.0, 3.0, 4.0, 5.0])
+    out = ndi.generic_filter1d(x, _line_range, filter_size=3)
+    assert np.allclose(out, [1.0, 2.0, 2.0, 2.0, 1.0])
+
+
+def test_generic_filter1d_origin_nearest():
+    x = np.array([1.0, 2.0, 3.0, 4.0, 5.0])
+    out = ndi.generic_filter1d(x, _line_sum, filter_size=3,
+                               mode='nearest', origin=1)
+    assert np.allclose(out, [3.0, 4.0, 6.0, 9.0, 12.0])
+
+
+def test_generic_filter1d_extra_arguments():
+    def scale_mean(input_line, output_line, scale):
+        il = [float(t) for t in np.asarray(input_line).tolist()]
+        m = sum(il) / len(il) * scale
+        for i in range(len(output_line)):
+            output_line[i] = m
+    x = np.array([1.0, 2.0, 3.0, 4.0, 5.0])
+    out = ndi.generic_filter1d(x, scale_mean, filter_size=3,
+                               mode='nearest', extra_arguments=(2.0,))
+    assert np.allclose(out, [6.0] * 5)
+
+
+def test_generic_filter1d_matrix_axes():
+    m = np.array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])
+    out = ndi.generic_filter1d(m, _line_sum, filter_size=2, axis=0,
+                               mode='nearest')
+    assert np.allclose(out, [[2.0, 4.0, 6.0], [5.0, 7.0, 9.0]])
+    out = ndi.generic_filter1d(m, _line_sum, filter_size=2, mode='nearest')
+    assert np.allclose(out, [[2.0, 3.0, 5.0], [8.0, 9.0, 11.0]])
+
+
+def test_generic_filter_median():
+    img = np.array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0], [7.0, 8.0, 9.0]])
+
+    def med(b):
+        v = sorted(float(t) for t in np.asarray(b).tolist())
+        return v[len(v) // 2]
+
+    out = ndi.generic_filter(img, med, size=3)
+    assert out[1, 1] == 5.0
+    # scipy reflect at the corner: window is {1, 2, 2, 4, 4, 5, 5, 5, 5}
+    assert out[0, 0] == 4.0
+    assert out[0, 1] == 4.0
+
+
+def test_generic_filter_constant_cval():
+    # 1x3 image, 3x3 footprint, cval=10: p0 sees 7 cvals + {1,2},
+    # p1 sees 6 cvals + {1,2,3}, p2 sees 7 cvals + {2,3}
+    img = np.array([[1.0, 2.0, 3.0]])
+    out = ndi.generic_filter(img, lambda b: float(np.sum(b)), size=3,
+                             mode='constant', cval=10.0)
+    assert np.allclose(out, [73.0, 66.0, 75.0])
+
+
+def test_generic_filter_cross_footprint():
+    img = np.array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0], [7.0, 8.0, 9.0]])
+    fp = np.array([[0, 1, 0], [1, 1, 1], [0, 1, 0]], dtype=bool)
+    out = ndi.generic_filter(img, lambda b: float(np.sum(b)), footprint=fp)
+    assert out[1, 1] == 25.0
+    # (0,1): cross with reflect extension {5, 1, 2, 3, 5}
+    assert out[0, 1] == 16.0
