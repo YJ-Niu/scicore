@@ -438,11 +438,15 @@ def _quadratic_assignment_faq(A, B,
     if maximize:
         obj_func_scalar = -1
 
-    nonseed_B = np.setdiff1d(range(n), partial_match[:, 1])
+    nonseed_B = np.setdiff1d(np.arange(n), partial_match[:, 1])
     if shuffle_input:
-        nonseed_B = rng.permutation(nonseed_B)
+        # rsnumpy's Generator.permutation only accepts an int, so shuffle
+        # positions and map back through the value list.
+        _vals = [int(t) for t in np.asarray(nonseed_B).tolist()]
+        _sh = [int(t) for t in np.asarray(rng.permutation(len(_vals))).tolist()]
+        nonseed_B = np.array([_vals[k] for k in _sh])
 
-    nonseed_A = np.setdiff1d(range(n), partial_match[:, 0])
+    nonseed_A = np.setdiff1d(np.arange(n), partial_match[:, 0])
     perm_A = np.concatenate([partial_match[:, 0], nonseed_A])
     perm_B = np.concatenate([partial_match[:, 1], nonseed_B])
 
@@ -663,38 +667,41 @@ def _quadratic_assignment_2opt(A, B, maximize=False, rng=None,
     if msg is not None:
         raise ValueError(msg)
 
-    fixed_rows = None
+    # rsnumpy lacks boolean-mask array assignment, so the seed/guess
+    # bookkeeping stays in plain Python containers.
+    fixed_rows = set()
     if partial_match.size or partial_guess.size:
         # use partial_match and partial_guess for initial permutation,
         # but randomly permute the rest.
-        guess_rows = np.zeros(N, dtype=bool)
-        guess_cols = np.zeros(N, dtype=bool)
-        fixed_rows = np.zeros(N, dtype=bool)
-        fixed_cols = np.zeros(N, dtype=bool)
-        perm = np.zeros(N, dtype=int)
+        perm_list = [-1] * N
 
-        rg, cg = partial_guess.T
-        guess_rows[rg] = True
-        guess_cols[cg] = True
-        perm[guess_rows] = cg
+        rg = [int(t) for t in np.asarray(partial_guess[:, 0]).tolist()]
+        cg = [int(t) for t in np.asarray(partial_guess[:, 1]).tolist()]
+        for a, b in zip(rg, cg):
+            perm_list[a] = b
 
         # match overrides guess
-        rf, cf = partial_match.T
-        fixed_rows[rf] = True
-        fixed_cols[cf] = True
-        perm[fixed_rows] = cf
+        rf = [int(t) for t in np.asarray(partial_match[:, 0]).tolist()]
+        cf = [int(t) for t in np.asarray(partial_match[:, 1]).tolist()]
+        for a, b in zip(rf, cf):
+            perm_list[a] = b
+        fixed_rows = set(rf)
 
-        random_rows = ~fixed_rows & ~guess_rows
-        random_cols = ~fixed_cols & ~guess_cols
-        perm[random_rows] = rng.permutation(np.arange(N)[random_cols])
+        used_rows = set(rg) | set(rf)
+        used_cols = set(perm_list[i] for i in used_rows)
+        free_rows = [i for i in range(N) if i not in used_rows]
+        free_cols = [i for i in range(N) if i not in used_cols]
+        _sh = [int(t) for t in np.asarray(rng.permutation(len(free_cols))).tolist()]
+        for r, k in zip(free_rows, _sh):
+            perm_list[r] = free_cols[k]
+        perm = np.array(perm_list)
     else:
-        perm = rng.permutation(np.arange(N))
+        perm = np.array([int(t) for t in
+                         np.asarray(rng.permutation(N)).tolist()])
 
     best_score = _calc_score(A, B, perm)
 
-    i_free = np.arange(N)
-    if fixed_rows is not None:
-        i_free = i_free[~fixed_rows]
+    i_free = [i for i in range(N) if i not in fixed_rows]
 
     better = operator.gt if maximize else operator.lt
     n_iter = 0

@@ -66,6 +66,28 @@ def test_isotonic_regression_decreasing():
     assert list(res.blocks) == [0, 2, 3]
 
 
+def test_quadratic_assignment():
+    # brute-force optimum over all 24 permutations is 4.0
+    a = [[0.0, 1.0, 1.0, 0.0],
+         [1.0, 0.0, 0.0, 1.0],
+         [1.0, 0.0, 0.0, 1.0],
+         [0.0, 1.0, 1.0, 0.0]]
+    b = [[0.0, 1.0, 0.0, 1.0],
+         [1.0, 0.0, 1.0, 0.0],
+         [0.0, 1.0, 0.0, 1.0],
+         [1.0, 0.0, 1.0, 0.0]]
+    for method in ('faq', '2opt'):
+        res = sopt.quadratic_assignment(a, b, method=method)
+        perm = [int(t) for t in np.asarray(res.col_ind).tolist()]
+        assert sorted(perm) == [0, 1, 2, 3]
+        assert np.isclose(res.fun, 4.0)
+    # seeds must be respected by the solution
+    res = sopt.quadratic_assignment(a, b,
+                                    options={'partial_match': np.array([[0, 0], [1, 1]])})
+    perm = [int(t) for t in np.asarray(res.col_ind).tolist()]
+    assert perm[0] == 0 and perm[1] == 1
+
+
 # ---------------- not yet ported / broken ----------------
 
 def test_minimize_bfgs():
