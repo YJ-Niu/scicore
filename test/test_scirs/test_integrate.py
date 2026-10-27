@@ -30,13 +30,11 @@ def test_solve_ivp_harmonic_oscillator():
 
 # ---------------- not yet ported / broken ----------------
 
-@pytest.mark.xfail(reason="_quadpack not yet ported to Rust/rsnumpy")
 def test_quad_polynomial():
     val, _ = sint.quad(lambda x: x**2, 0, 1)
     assert np.isclose(val, 1.0 / 3.0, rtol=1e-10)
 
 
-@pytest.mark.xfail(reason="_quadpack not yet ported to Rust/rsnumpy")
 def test_nquad():
     val, _ = sint.nquad(lambda x, y: x + y, [[0, 1], [0, 1]])
     assert np.isclose(val, 1.0, rtol=1e-10)
