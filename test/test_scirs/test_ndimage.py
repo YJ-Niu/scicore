@@ -308,3 +308,61 @@ def test_generic_filter_cross_footprint():
     assert out[1, 1] == 25.0
     # (0,1): cross with reflect extension {5, 1, 2, 3, 5}
     assert out[0, 1] == 16.0
+
+
+# ---------------- watershed_ift ----------------
+
+def test_watershed_ift_1d():
+    inp = np.array([3, 1, 2, 10, 1, 4], dtype=np.uint8)
+    mk = np.array([1, 0, 0, 0, 0, 2])
+    out = ndi.watershed_ift(inp, mk)
+    assert np.asarray(out).tolist() == [1, 1, 1, 2, 2, 2]
+
+
+def test_watershed_ift_negative_marker():
+    # negative markers are grown after the positive ones
+    inp = np.array([1, 2, 9, 1, 1], dtype=np.uint8)
+    mk = np.array([1, 0, 0, 0, -1])
+    out = ndi.watershed_ift(inp, mk)
+    assert np.asarray(out).tolist() == [1, 1, -1, -1, -1]
+
+
+def test_watershed_ift_2d_ridge():
+    inp = np.array([[1, 1, 1, 10], [1, 1, 1, 10],
+                    [1, 1, 1, 10], [10, 10, 10, 1]], dtype=np.uint8)
+    mk = np.array([[1, 0, 0, 0], [0, 0, 0, 0],
+                   [0, 0, 0, 0], [0, 0, 0, 2]])
+    out = ndi.watershed_ift(inp, mk)
+    assert np.asarray(out).tolist() == [[1, 1, 1, 1], [1, 1, 1, 1],
+                                        [1, 1, 1, 2], [1, 1, 2, 2]]
+
+
+def test_watershed_ift_single_marker():
+    inp = np.array([[1, 1], [1, 1]], dtype=np.uint8)
+    mk = np.array([[5, 0], [0, 0]])
+    out = ndi.watershed_ift(inp, mk)
+    assert np.asarray(out).tolist() == [[5, 5], [5, 5]]
+
+
+def test_watershed_ift_structure():
+    inp = np.array([[1, 10, 1], [10, 1, 10], [1, 10, 1]], dtype=np.uint8)
+    mk = np.array([[1, 0, 0], [0, 0, 0], [0, 0, 2]])
+    # 8-connectivity: (2,0) reached via the (1,1) diagonal at cost 2
+    out = ndi.watershed_ift(inp, mk, structure=np.ones((3, 3), dtype=bool))
+    assert np.asarray(out).tolist() == [[1, 1, 1], [1, 1, 2], [1, 2, 2]]
+    # default 4-connectivity: (2,0) is a 11/11 tie -> first marker wins
+    out = ndi.watershed_ift(inp, mk)
+    assert np.asarray(out).tolist() == [[1, 1, 1], [1, 1, 2], [1, 2, 2]]
+    # diagonal-only structure: only same-parity pixels are reachable,
+    # the other parity class stays 0
+    diag = np.array([[1, 0, 1], [0, 1, 0], [1, 0, 1]], dtype=bool)
+    out = ndi.watershed_ift(inp, mk, structure=diag)
+    assert np.asarray(out).tolist() == [[1, 0, 1], [0, 1, 0], [1, 0, 2]]
+
+
+def test_watershed_ift_dtype_checks():
+    with pytest.raises(TypeError):
+        ndi.watershed_ift(np.array([1.0, 2.0]), np.array([1, 2]))
+    with pytest.raises(RuntimeError):
+        ndi.watershed_ift(np.array([1, 2], dtype=np.uint8),
+                          np.array([1.5, 2.0]))

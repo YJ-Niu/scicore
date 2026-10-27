@@ -1657,7 +1657,10 @@ def watershed_ift(input, markers, structure=None, output=None):
 
     """
     input = np.asarray(input)
-    if input.dtype.type not in [np.uint8, np.uint16]:
+    # rsnumpy dtype.type is the generic Python class, so check by
+    # subdtype + itemsize instead of identity against np.uint8/16
+    if not (np.issubdtype(input.dtype, np.unsignedinteger)
+            and input.dtype.itemsize in (1, 2)):
         raise TypeError('only 8 and 16 unsigned inputs are supported')
 
     if structure is None:
@@ -1682,11 +1685,11 @@ def watershed_ift(input, markers, structure=None, output=None):
                       np.intc,
                       np.intp]
 
-    if markers.dtype.type not in integral_types:
+    if not np.issubdtype(markers.dtype, np.integer):
         raise RuntimeError('marker should be of integer type')
 
     if isinstance(output, np.ndarray):
-        if output.dtype.type not in integral_types:
+        if not np.issubdtype(output.dtype, np.integer):
             raise RuntimeError('output should be of integer type')
     else:
         output = markers.dtype

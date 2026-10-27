@@ -14,6 +14,7 @@ Extension-mode codes (see :func:`_ni_support._extend_mode_to_code`):
 
 from __future__ import annotations
 
+import heapq
 import math
 from itertools import product
 
@@ -1115,7 +1116,94 @@ def value_indices(arr, ignoreIsNone, ignore_value_arr):
 
 
 def watershed_ift(input, markers, structure, output):
-    raise NotImplementedError("watershed_ift not yet ported to Rust/rsnumpy")
+    """Image foresting transform watershed (scipy ni_measurements.c
+    NI_WatershedIFT): a multi-source Dijkstra over the structure
+    neighbourhood.  The IFT cost of a pixel is the minimum, over all
+    paths from any marker, of the sum of the input values of the pixels
+    entered along the path (a marker pixel itself costs 0).  Each pixel
+    receives the label of the marker that reaches it with the lowest
+    cost; positive markers are grown first and negative (background)
+    markers afterwards.  Ties keep the earlier label."""
+    input = np.asarray(input)
+    markers = np.asarray(markers)
+    structure = np.asarray(structure, dtype=bool)
+    output = np.asarray(output)
+    ndim = input.ndim
+    shape = list(input.shape)
+    shp_mk = list(structure.shape)
+
+    in_vals = input.tolist()
+    mk_vals = markers.tolist()
+
+    strides = [1] * ndim
+    for h in range(ndim - 2, -1, -1):
+        strides[h] = strides[h + 1] * shape[h + 1]
+
+    def flat_of(idx):
+        f = 0
+        for h in range(ndim):
+            f += idx[h] * strides[h]
+        return f
+
+    center = tuple(s // 2 for s in shp_mk)
+    deltas = []
+    for sp in product(*[range(s) for s in shp_mk]):
+        if sp != center and bool(structure[sp]):
+            deltas.append(tuple(a - b for a, b in zip(sp, center)))
+
+    n_px = 1
+    for d in shape:
+        n_px *= d
+
+    def multi_of(f):
+        idx = [0] * ndim
+        for h in range(ndim - 1, -1, -1):
+            idx[h] = f % shape[h]
+            f //= shape[h]
+        # tuple key = element index in rsnumpy; a list key is fancy
+        # row indexing and would broadcast the value over whole rows
+        return tuple(idx)
+
+    def elem(vals, f):
+        idx = multi_of(f)
+        node = vals
+        for h in range(ndim):
+            node = node[idx[h]]
+        return node
+
+    costs = [None] * n_px
+    labels = [0] * n_px
+
+    def phase(positive):
+        heap = []
+        for f in range(n_px):
+            mk = int(elem(mk_vals, f))
+            if mk != 0 and (mk > 0) == positive:
+                costs[f] = 0.0
+                labels[f] = mk
+                heapq.heappush(heap, (0.0, f))
+        while heap:
+            c, f = heapq.heappop(heap)
+            if c > costs[f]:
+                continue
+            idx = multi_of(f)
+            lab = labels[f]
+            for d in deltas:
+                q = [idx[h] + d[h] for h in range(ndim)]
+                if any(a < 0 or a >= shape[h] for h, a in enumerate(q)):
+                    continue
+                g = flat_of(q)
+                nc = c + float(elem(in_vals, g))
+                if costs[g] is None or nc < costs[g]:
+                    costs[g] = nc
+                    labels[g] = lab
+                    heapq.heappush(heap, (nc, g))
+
+    phase(True)
+    phase(False)
+
+    for f in range(n_px):
+        _set_elem(output, multi_of(f), labels[f])
 
 
 # Aliases commonly expected by ndimage submodules (the Python-level
