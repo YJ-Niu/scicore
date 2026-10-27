@@ -865,12 +865,139 @@ def generic_filter(input, function, footprint, output, mode, cval, origin=0):
     raise NotImplementedError("generic_filter not yet ported to Rust/rsnumpy")
 
 
+# ---------------------------------------------------------------------------
+# fourier filters (port of the scipy ``ni_fourier.c`` core)
+# ---------------------------------------------------------------------------
+
+_FOURIER_GAUSSIAN = 0
+_FOURIER_UNIFORM = 1
+_FOURIER_ELLIPSOID = 2
+
+
+def _fourier_gauss_factor(s, f):
+    return math.exp(-2.0 * math.pi * math.pi * s * s * f * f)
+
+
+def _fourier_uniform_factor(s, f):
+    t = math.pi * s * f
+    if abs(t) < 1e-8:
+        return 1.0
+    return math.sin(t) / t
+
+
+def _fourier_ellipsoid_factor(s, f):
+    return math.exp(-(s * f) * (s * f))
+
+
+def _fourier_axis_freqs(length, real_n, is_real_axis):
+    """Spectral frequencies (cycles/sample) of one axis."""
+    if is_real_axis:
+        fr = np.fft.rfftfreq(real_n)
+    else:
+        fr = np.fft.fftfreq(length)
+    return [float(t) for t in np.asarray(fr).tolist()]
+
+
 def fourier_filter(input, sigmas, n, axis, output, type):
-    raise NotImplementedError("fourier_filter not yet ported to Rust/rsnumpy")
+    """Multiply the FFT of `input` with the separable filter of `type`
+    (0 gaussian, 1 uniform, 2 ellipsoid), storing the result in `output`.
+
+    Per-axis multipliers (f = fftfreq(L) per axis, or rfftfreq(n) on
+    `axis` when n >= 0, i.e. `input` is a real FFT of an n-sample signal
+    along that axis):
+
+        gaussian  exp(-2 pi^2 sigma^2 f^2)
+        uniform   sin(pi size f) / (pi size f)      (1 for |pi size f| < 1e-8)
+        ellipsoid exp(-(size f)^2)
+    """
+    input = np.asarray(input)
+    output = np.asarray(output)
+    ndim = input.ndim
+    shape = list(input.shape)
+    sig = [float(t) for t in np.asarray(sigmas).tolist()]
+    n = -1 if n is None else int(n)
+    axis = 0 if axis is None else int(axis)
+    if type == _FOURIER_GAUSSIAN:
+        fct = _fourier_gauss_factor
+    elif type == _FOURIER_UNIFORM:
+        fct = _fourier_uniform_factor
+    elif type == _FOURIER_ELLIPSOID:
+        fct = _fourier_ellipsoid_factor
+    else:
+        raise ValueError("invalid fourier filter type %r" % (type,))
+
+    facs = []
+    for k in range(ndim):
+        L = shape[k]
+        is_real = n >= 0 and k == axis
+        fr = _fourier_axis_freqs(L, n, is_real)
+        if len(fr) != L:
+            raise RuntimeError(
+                "invalid real transform length %d for axis %d (length %d)"
+                % (n, k, L))
+        facs.append([fct(sig[k], t) for t in fr])
+
+    data = input.tolist()
+    for idx in product(*[range(L) for L in shape]):
+        m = 1.0
+        node = data
+        for k in range(ndim):
+            m *= facs[k][idx[k]]
+            node = node[idx[k]]
+        z = node
+        if isinstance(z, complex):
+            val = complex(z.real * m, z.imag * m)
+        else:
+            val = float(z) * m
+        if ndim == 1:
+            output[idx[0]] = val
+        else:
+            output[idx] = val
 
 
 def fourier_shift(input, shifts, n, axis, output):
-    raise NotImplementedError("fourier_shift not yet ported to Rust/rsnumpy")
+    """Multiply the FFT of `input` with the phase
+    exp(-2 pi i sum_k f_k shift_k) — the Fourier transform of a circular
+    shift (the inverse FFT of the result is `input` shifted by `shifts`).
+    The n/axis conventions match :func:`fourier_filter`; the result is
+    complex.
+    """
+    input = np.asarray(input)
+    output = np.asarray(output)
+    ndim = input.ndim
+    shape = list(input.shape)
+    sh = [float(t) for t in np.asarray(shifts).tolist()]
+    n = -1 if n is None else int(n)
+    axis = 0 if axis is None else int(axis)
+
+    facs = []
+    for k in range(ndim):
+        L = shape[k]
+        is_real = n >= 0 and k == axis
+        fr = _fourier_axis_freqs(L, n, is_real)
+        if len(fr) != L:
+            raise RuntimeError(
+                "invalid real transform length %d for axis %d (length %d)"
+                % (n, k, L))
+        facs.append([complex(math.cos(-2.0 * math.pi * t * sh[k]),
+                             math.sin(-2.0 * math.pi * t * sh[k]))
+                     for t in fr])
+
+    data = input.tolist()
+    for idx in product(*[range(L) for L in shape]):
+        m = 1.0 + 0.0j
+        node = data
+        for k in range(ndim):
+            m *= facs[k][idx[k]]
+            node = node[idx[k]]
+        z = node
+        if not isinstance(z, complex):
+            z = complex(float(z), 0.0)
+        val = z * m
+        if ndim == 1:
+            output[idx[0]] = val
+        else:
+            output[idx] = val
 
 
 def find_objects(input, max_label):
