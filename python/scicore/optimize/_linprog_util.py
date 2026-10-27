@@ -1489,8 +1489,10 @@ def _check_result(x, fun, status, slack, con, bounds, tol, message,
     message : str
         A string descriptor of the exit status of the optimization.
     """
-    # Somewhat arbitrary
-    tol = np.sqrt(tol) * 10
+    # Somewhat arbitrary.
+    # Kept a plain Python float: an rsnumpy 0-dim array fails to broadcast
+    # against empty slack/con arrays below.
+    tol = (np.asarray(tol).tolist() ** 0.5) * 10
 
     if x is None:
         # HiGHS does not provide x if infeasible/unbounded

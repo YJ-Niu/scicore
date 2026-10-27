@@ -1707,6 +1707,38 @@ def eigsh(A, k=6, M=None, sigma=None, which='LM', v0=None,
 
         return eigh(A, b=M, eigvals_only=not return_eigenvectors)
 
+    if sigma is None and M is None and not isinstance(A, LinearOperator):
+        # ARPACK targets large sparse problems. For explicit input the
+        # direct Hermitian solver is exact, so use it instead of the
+        # (not yet ported) ARPACK driver.
+        dense = A.toarray() if issparse(A) else np.asarray(A)
+        w_all, v_all = eigh(dense)
+        w_all = [float(x) for x in np.asarray(w_all).tolist()]
+        v_rows = np.asarray(v_all).tolist()
+
+        if which == 'LA':
+            sel = list(range(n - k, n))
+        elif which == 'SA':
+            sel = list(range(0, k))
+        elif which == 'LM':
+            sel = sorted(range(n), key=lambda i: (-abs(w_all[i]), i))[:k]
+        elif which == 'SM':
+            sel = sorted(range(n), key=lambda i: (abs(w_all[i]), i))[:k]
+        else:  # 'BE': k/2 from each end (odd k: one more from the high end)
+            lo = k // 2
+            sel = list(range(0, lo)) + list(range(n - (k - lo), n))
+
+        if which in ('LM', 'SM') and not return_eigenvectors:
+            sel = sorted(sel, key=lambda i: -abs(w_all[i]))
+        else:  # algebraic order (LAPACK returns ascending eigenvalues)
+            sel = sorted(sel, key=lambda i: w_all[i])
+
+        w_sel = np.array([w_all[i] for i in sel])
+        if return_eigenvectors:
+            v_sel = np.array([[v_rows[j][i] for i in sel] for j in range(n)])
+            return w_sel, v_sel
+        return w_sel
+
     if sigma is None:
         A = aslinearoperator(A)
         matvec = A.matvec

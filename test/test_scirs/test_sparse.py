@@ -51,12 +51,13 @@ def test_spsolve():
     assert np.allclose(x, [1.0, 2.0])
 
 
-@pytest.mark.xfail(reason="_arpacklib not yet ported (eigsh needs ARPACK; B/C layer)")
 def test_eigsh():
     # scipy requires k < N for eigsh; use 3x3 so k=2 is valid
     a = sps.csr_matrix(np.array([[2.0, 0.0, 0.0], [0.0, 3.0, 0.0], [0.0, 0.0, 4.0]]))
-    w = sps.linalg.eigsh(a, k=2, which="LA")
-    assert np.allclose(np.sort(w), [2.0, 3.0])
+    # which="LA" = largest algebraic eigenvalues: {3, 4}
+    w, v = sps.linalg.eigsh(a, k=2, which="LA")
+    assert np.allclose(np.sort(w), [3.0, 4.0])
+    assert np.asarray(v).shape == (3, 2)
 
 
 def test_dijkstra():
