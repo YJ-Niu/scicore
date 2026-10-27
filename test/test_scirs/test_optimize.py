@@ -19,10 +19,51 @@ def test_newton_quadratic():
     assert np.isclose(sopt.newton(lambda x: x**2 - 4, 3.0), 2.0, atol=1e-10)
 
 
-def test_linear_sum_assignment_identity():
+def test_linear_sum_assignment_square():
+    # min total cost is 5 via row0->col1, row1->col0, row2->col2
     row_ind, col_ind = sopt.linear_sum_assignment(np.array([[4.0, 1.0, 3.0], [2.0, 0.0, 5.0], [3.0, 2.0, 2.0]]))
     assert list(row_ind) == [0, 1, 2]
-    assert list(col_ind) == [0, 1, 2]
+    assert list(col_ind) == [1, 0, 2]
+
+
+def test_linear_sum_assignment_rect():
+    # n < m: all rows assigned
+    row_ind, col_ind = sopt.linear_sum_assignment(np.array([[7.0, 3.0], [4.0, 2.0]]))
+    assert list(row_ind) == [0, 1]
+    assert list(col_ind) == [1, 0]
+    # n > m: all columns assigned, min cost is col0->row2, col1->row1
+    row_ind, col_ind = sopt.linear_sum_assignment(np.array([[7.0, 3.0], [4.0, 2.0], [1.0, 1.0]]))
+    assert list(col_ind) == [0, 1]
+    assert list(row_ind) == [2, 1]
+
+
+def test_linear_sum_assignment_maximize():
+    # max total cost is 11 via row0->col0, row1->col2, row2->col1
+    row_ind, col_ind = sopt.linear_sum_assignment(np.array([[4.0, 1.0, 3.0], [2.0, 0.0, 5.0], [3.0, 2.0, 2.0]]), maximize=True)
+    assert list(row_ind) == [0, 1, 2]
+    assert list(col_ind) == [0, 2, 1]
+
+
+def test_isotonic_regression():
+    y = [1.5, 1.0, 4.0, 6.0, 5.7, 5.0, 7.8, 9.0, 7.5, 9.5, 9.0]
+    res = sopt.isotonic_regression(y)
+    assert np.allclose(res.x, [1.25, 1.25, 4.0, 5.56666667, 5.56666667,
+                               5.56666667, 7.8, 8.25, 8.25, 9.25, 9.25], atol=1e-6)
+    assert list(res.blocks) == [0, 2, 3, 6, 7, 9, 11]
+    assert np.allclose(res.weights, [2.0, 1.0, 3.0, 1.0, 2.0, 2.0])
+
+
+def test_isotonic_regression_weights():
+    # weighted pool of [2, 1] = (2*2 + 1*1)/3 = 5/3; point 1.0 stays separate
+    res = sopt.isotonic_regression([1.0, 2.0, 1.0], weights=[1.0, 2.0, 1.0])
+    assert np.allclose(res.x, [1.0, 5.0 / 3.0, 5.0 / 3.0])
+    assert list(res.blocks) == [0, 1, 3]
+
+
+def test_isotonic_regression_decreasing():
+    res = sopt.isotonic_regression([1.0, 3.0, 2.0], increasing=False)
+    assert np.allclose(res.x, [2.0, 2.0, 2.0])
+    assert list(res.blocks) == [0, 2, 3]
 
 
 # ---------------- not yet ported / broken ----------------
