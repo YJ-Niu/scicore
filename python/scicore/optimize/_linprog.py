@@ -39,6 +39,326 @@ LINPROG_METHODS = [
 ]
 
 
+def _linprog_fallback(lp, solver_options):
+    """Solve the original problem with a pure-Python two-phase simplex.
+
+    Fallback for the HiGHS methods when the HiGHS backend is unavailable
+    (the C++ extension was replaced by a stub). Deliberately works on
+    plain Python floats and lists, avoiding parts of the rsnumpy array
+    API that are not yet reliable.
+
+    Returns the same result dict as ``_linprog_highs``.
+    """
+    maxiter = solver_options.get('maxiter', 1000)
+    maxiter = int(maxiter) if maxiter is not None else 1000
+    tol = solver_options.get('tol', 1e-9)
+    tol = float(tol) if tol is not None else 1e-9
+
+    c = [float(x) for x in np.asarray(lp.c).tolist()]
+    A_eq = np.asarray(lp.A_eq).tolist() if lp.A_eq is not None else []
+    b_eq = [float(x) for x in np.asarray(lp.b_eq).tolist()] \
+        if lp.b_eq is not None else []
+    A_ub = np.asarray(lp.A_ub).tolist() if lp.A_ub is not None else []
+    b_ub = [float(x) for x in np.asarray(lp.b_ub).tolist()] \
+        if lp.b_ub is not None else []
+    bounds = [[float(x) for x in row]
+              for row in np.asarray(lp.bounds).tolist()]
+    integrality = (np.asarray(lp.integrality).tolist()
+                   if lp.integrality is not None else [0] * len(c))
+    if any(int(v) != 0 for v in integrality):
+        raise NotImplementedError(
+            "integer constraints require the HiGHS backend, which is "
+            "not yet ported")
+
+    n = len(c)
+    neg_inf = float('-inf')
+    pos_inf = float('inf')
+
+    # --- make every variable non-negative ------------------------------
+    #   free: x = p - q     shift/box: x = lb + y     flip: x = ub - y
+    # 'box' (finite lb and ub) additionally gets a row y + z = ub - lb.
+    trans = []
+    names = []
+    cstd = []
+    j_of = {}
+    c0 = 0.0
+    for i in range(n):
+        lb, ub = bounds[i]
+        j_of[i] = len(cstd)
+        if lb == neg_inf:
+            if ub == pos_inf:
+                trans.append(('free', i))
+                names += [('free_pos', i), ('free_neg', i)]
+                cstd += [c[i], -c[i]]
+            else:
+                trans.append(('flip', i, ub))
+                names.append(('flip', i, ub))
+                cstd.append(-c[i])
+                c0 += c[i] * ub
+        elif ub == pos_inf:
+            trans.append(('shift', i, lb))
+            names.append(('shift', i, lb))
+            cstd.append(c[i])
+            c0 += c[i] * lb
+        else:
+            trans.append(('box', i, lb))
+            names.append(('box', i, lb))
+            cstd.append(c[i])
+            c0 += c[i] * lb
+
+    def unmap(y):
+        x = [0.0] * n
+        for j, name in enumerate(names):
+            kind = name[0]
+            if kind == 'free_pos':
+                x[name[1]] = y[j]
+            elif kind == 'free_neg':
+                x[name[1]] -= y[j]
+            elif kind in ('shift', 'box'):
+                x[name[1]] = name[2] + y[j]
+            elif kind == 'flip':
+                x[name[1]] = name[2] - y[j]
+        for i in range(n):
+            lb, ub = bounds[i]
+            if lb != neg_inf and lb - 1e-9 < x[i] < lb:
+                x[i] = lb
+            if ub != pos_inf and ub < x[i] < ub + 1e-9:
+                x[i] = ub
+        return x
+
+    n_vars = len(names)
+    ub_rows = []  # (column of y, rhs) for the finite upper bounds
+    for j, name in enumerate(names):
+        if name[0] == 'box':
+            i, lb = name[1], name[2]
+            ub_rows.append((j, float(bounds[i][1]) - lb))
+    m_ub = len(ub_rows)
+    m_ineq = len(A_ub)
+    # zero-cost slack variables: upper-bound rows first, then A_ub rows
+    cstd += [0.0] * (m_ub + m_ineq)
+    n_cols = n_vars + m_ub + m_ineq
+
+    def transform_row(row):
+        out = [0.0] * n_vars
+        rhs = 0.0
+        for i, a in enumerate(row):
+            a = float(a)
+            if a == 0.0:
+                continue
+            t = trans[i]
+            if t[0] == 'free':
+                out[j_of[i]] += a
+                out[j_of[i] + 1] -= a
+            elif t[0] == 'flip':
+                out[j_of[i]] -= a
+                rhs += a * t[2]
+            else:  # shift / box
+                out[j_of[i]] += a
+                rhs += a * t[2]
+        return out, rhs
+
+    rows = []
+    rhs_vec = []
+    for row, b in zip(A_eq, b_eq):
+        base, b_ = transform_row(row)
+        rows.append(base + [0.0] * (m_ub + m_ineq))
+        rhs_vec.append(float(b) - b_)
+    for s, (row, b) in enumerate(zip(A_ub, b_ub)):
+        base, b_ = transform_row(row)
+        r = base + [0.0] * (m_ub + m_ineq)
+        r[n_vars + m_ub + s] = 1.0
+        rows.append(r)
+        rhs_vec.append(float(b) - b_)
+    for t, (j, b) in enumerate(ub_rows):
+        r = [0.0] * n_cols
+        r[j] = 1.0
+        r[n_vars + t] = 1.0
+        rows.append(r)
+        rhs_vec.append(b)
+    m = len(rows)
+
+    ok_message = ('Optimization terminated successfully. '
+                  '(simplex fallback, HiGHS not yet ported)')
+
+    def finish(status, message, x_orig, fun, nit):
+        if x_orig is None:
+            return {'x': None, 'fun': None, 'status': status,
+                    'slack': np.array([]), 'con': np.array([]),
+                    'nit': nit, 'message': message}
+        slack = [float(b) - sum(float(a) * x for a, x in zip(row, x_orig))
+                 for row, b in zip(A_ub, b_ub)]
+        con = [float(b) - sum(float(a) * x for a, x in zip(row, x_orig))
+               for row, b in zip(A_eq, b_eq)]
+        return {'x': np.array(x_orig), 'fun': float(fun),
+                'status': status, 'slack': np.array(slack),
+                'con': np.array(con), 'nit': nit, 'message': message}
+
+    if m == 0:
+        x0 = unmap([0.0] * n_cols)
+        fun0 = sum(ci * xi for ci, xi in zip(c, x0))
+        if any(cv < -tol for cv in cstd):
+            return finish(3, 'Problem appears to be unbounded.',
+                          None, None, 0)
+        return finish(0, ok_message, x0, fun0, 0)
+
+    # --- two-phase simplex on the standard-form problem ----------------
+    # dictionary: x_{B_r} = rhs[r] - sum_j table[r][j] x_j
+    n_art = m
+    var_n = n_cols + n_art
+    table = []
+    rhs = []
+    basis = []
+    obj_val = 0.0
+    obj = {}
+    for r in range(m):
+        row = rows[r]
+        b = rhs_vec[r]
+        if b >= 0.0:
+            d_row = {j: v for j, v in enumerate(row) if v != 0.0}
+            rhs.append(b)
+            obj_val += b
+            for j, d in d_row.items():
+                obj[j] = obj.get(j, 0.0) - d
+        else:
+            # flip the row so the artificial starts at -b > 0; the
+            # objective then contains -a_r for this row
+            d_row = {j: -v for j, v in enumerate(row) if v != 0.0}
+            rhs.append(-b)
+            obj_val -= (-b)
+            for j, d in d_row.items():
+                obj[j] = obj.get(j, 0.0) + d
+        table.append(d_row)
+        basis.append(n_cols + r)
+
+    def pivot(obj_val, enter, leave):
+        r = basis.index(leave)
+        a = table[r][enter]
+        new_row = {}
+        for j in range(var_n):
+            if j != enter:
+                d = table[r].get(j, 0.0)
+                if d != 0.0:
+                    new_row[j] = d / a
+        new_row[leave] = 1.0 / a
+        rhs[r] /= a
+        f = obj.pop(enter, 0.0)
+        for rr in range(len(table)):
+            if rr == r:
+                continue
+            c_ = table[rr].get(enter, 0.0)
+            if c_ == 0.0:
+                continue
+            rhs[rr] -= c_ * rhs[r]
+            table[rr][leave] = table[rr].get(leave, 0.0) + c_ / a
+            for j in list(table[rr]):
+                if j != leave:
+                    table[rr][j] += c_ * new_row.get(j, 0.0)
+                    if table[rr][j] == 0.0:
+                        del table[rr][j]
+        obj[leave] = obj.get(leave, 0.0) - f / a
+        for j in list(obj):
+            if j != leave:
+                obj[j] -= f * new_row.get(j, 0.0)
+                if obj[j] == 0.0:
+                    del obj[j]
+        table[r] = new_row
+        basis[r] = enter
+        return obj_val + f * rhs[r]
+
+    def simplex(obj_val, scan_n, iters):
+        """Bland's-rule primal simplex; returns (status, nit, obj_val)."""
+        basic_set = set(basis)
+        nit = 0
+        for _ in range(iters):
+            enter = None
+            for j in range(scan_n):
+                if j not in basic_set and obj.get(j, 0.0) < -tol:
+                    enter = j
+                    break
+            if enter is None:
+                return 0, nit, obj_val
+            best = None
+            for r in range(len(rhs)):
+                d = table[r].get(enter, 0.0)
+                if d > tol:
+                    ratio = rhs[r] / d
+                    if (best is None or ratio < best[0] - 1e-12 or
+                            (abs(ratio - best[0]) <= 1e-12 and
+                             basis[r] < basis[best[1]])):
+                        best = (ratio, r)
+            if best is None:
+                return 3, nit, obj_val
+            leave = basis[best[1]]
+            obj_val = pivot(obj_val, enter, leave)
+            basic_set.remove(leave)
+            basic_set.add(enter)
+            nit += 1
+        return 1, nit, obj_val
+
+    # phase one: find a basic feasible solution (min sum of artificials)
+    status, nit, obj_val = simplex(obj_val, var_n, maxiter)
+    if status == 1:
+        return finish(1, 'Iteration limit reached.', None, None, nit)
+    if status == 3:  # cannot happen: the phase-one objective is bounded
+        return finish(4, 'Serious numerical difficulties encountered.',  # below
+                      None, None, nit)
+    if obj_val > 100 * tol:
+        return finish(2, 'Problem appears to be infeasible.', None, None, nit)
+
+    # basic artificials must leave the basis before phase two
+    r = 0
+    while r < len(basis):
+        if basis[r] >= n_cols:
+            cand = None
+            for j in sorted(table[r]):
+                if j < n_cols and abs(table[r][j]) > tol:
+                    cand = j
+                    break
+            if cand is not None:
+                obj_val = pivot(obj_val, cand, basis[r])
+            else:  # redundant row
+                del table[r]
+                del rhs[r]
+                del basis[r]
+                continue
+        r += 1
+
+    # phase two: minimize c0 + cstd . y
+    basic_set = set(basis)
+    obj = {}
+    for j in range(n_cols):
+        if j not in basic_set and cstd[j] != 0.0:
+            obj[j] = cstd[j]
+    obj_val = c0
+    for r in range(len(basis)):
+        b = basis[r]
+        cb = cstd[b]
+        if cb == 0.0:
+            continue
+        obj_val += cb * rhs[r]
+        for j, d in table[r].items():
+            obj[j] = obj.get(j, 0.0) - cb * d
+            if obj[j] == 0.0:
+                del obj[j]
+
+    status, nit2, obj_val = simplex(obj_val, n_cols, max(0, maxiter - nit))
+    nit += nit2
+    if status == 1:
+        return finish(1, 'Iteration limit reached.', None, None, nit)
+    if status == 3:
+        return finish(3, 'Problem appears to be unbounded.', None, None, nit)
+
+    y = [0.0] * n_cols
+    for r, b in enumerate(basis):
+        if rhs[r] > 0.0:
+            y[b] = rhs[r]
+        elif rhs[r] > -1e-12:
+            y[b] = 0.0
+    x_orig = unmap(y)
+    fun = sum(ci * xi for ci, xi in zip(c, x_orig))
+    return finish(0, ok_message, x_orig, fun, nit)
+
+
 def linprog_verbose_callback(res):
     """
     A sample callback function demonstrating the linprog callback interface.
@@ -663,8 +983,14 @@ def linprog(c, A_ub=None, b_ub=None, A_eq=None, b_eq=None,
         highs_solvers = {'highs-ipm': 'ipm', 'highs-ds': 'simplex',
                          'highs': None}
 
-        sol = _linprog_highs(lp, solver=highs_solvers[meth],
-                             **solver_options)
+        try:
+            sol = _linprog_highs(lp, solver=highs_solvers[meth],
+                                 **solver_options)
+        except (NotImplementedError, AttributeError):
+            # The HiGHS backend is not yet ported (the C++ extension was
+            # replaced by a stub); solve with a pure-Python two-phase
+            # simplex on the original problem instead.
+            sol = _linprog_fallback(lp, solver_options)
         sol['status'], sol['message'] = (
             _check_result(sol['x'], sol['fun'], sol['status'], sol['slack'],
                           sol['con'], lp.bounds, tol, sol['message'],

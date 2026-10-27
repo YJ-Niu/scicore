@@ -45,19 +45,16 @@ def test_kdtree_query():
 # ---------------- not yet ported / broken ----------------
 
 
-@pytest.mark.xfail(reason="Delaunay not yet ported to Rust/rsnumpy")
 def test_delaunay():
     tri = sspa.Delaunay(np.array([[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]]))
     assert tri.simplices.shape == (1, 3)
 
 
-@pytest.mark.xfail(reason="Voronoi not yet ported to Rust/rsnumpy")
 def test_voronoi():
     vor = sspa.Voronoi(np.array([[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [1.0, 1.0]]))
     assert len(vor.verts) > 0
 
 
-@pytest.mark.xfail(reason="ConvexHull not yet ported to Rust/rsnumpy")
 def test_convex_hull():
     hull = sspa.ConvexHull(np.array([[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [0.5, 0.5]]))
     # interior point (0.5, 0.5) is not on the hull: volume of triangle = 0.5

@@ -42,11 +42,16 @@ def test_root_hybr():
     assert np.allclose(res.x, [2.0], atol=1e-8)
 
 
-@pytest.mark.xfail(reason="HiGHS solver not yet ported (_highspy/_core is a stub)")
 def test_linprog():
+    # min -x-y s.t. x+y<=1: the optimum -1 is attained on the whole
+    # segment x+y=1; a simplex solver returns a vertex, so check the
+    # objective and the optimal face rather than a single point
     res = sopt.linprog(c=[-1, -1], A_ub=[[1, 1]], b_ub=[1])
     assert res.success
-    assert np.allclose(res.x, [0.5, 0.5])
+    assert np.allclose(res.fun, -1.0)
+    x = np.asarray(res.x).tolist()
+    assert x[0] >= -1e-9 and x[1] >= -1e-9
+    assert abs(x[0] + x[1] - 1.0) < 1e-6
 
 
 def test_curve_fit_exponential():

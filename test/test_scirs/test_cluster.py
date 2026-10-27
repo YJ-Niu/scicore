@@ -34,7 +34,6 @@ def test_vq_assignment():
 
 # ---------------- not yet ported ----------------
 
-@pytest.mark.xfail(reason="_hierarchy not yet ported to Rust/rsnumpy")
 def test_linkage_ward():
     Z = shier.linkage(_two_blobs(), method="ward")
     assert Z.shape == (3, 4)
@@ -42,7 +41,6 @@ def test_linkage_ward():
     assert Z[-1, 2] > 5.0
 
 
-@pytest.mark.xfail(reason="_hierarchy not yet ported to Rust/rsnumpy")
 def test_fcluster_two_clusters():
     Z = shier.linkage(_two_blobs(), method="ward")
     labels = shier.fcluster(Z, t=2, criterion="maxclust")

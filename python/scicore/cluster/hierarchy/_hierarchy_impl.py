@@ -2587,7 +2587,9 @@ def fcluster(Z, t, criterion='inconsistent', depth=2, R=None, monocrit=None):
         monocrit = np.asarray(monocrit, order='C', dtype=np.float64)
 
     Z = np.asarray(Z)
-    monocrit = np.asarray(monocrit)
+    # rsnumpy cannot build an array from None (scipy/numpy return a 0-d
+    # object array, which the C path accepted).
+    monocrit = None if monocrit is None else np.asarray(monocrit)
     if criterion == 'inconsistent':
         if R is None:
             R = inconsistent(Z, depth)

@@ -12,6 +12,7 @@ mod fftpack_convolve;
 mod flapack;
 mod fmm;
 mod fpumode;
+mod geometry;
 mod givens_elimination;
 mod graph_tools;
 mod hausdorff;
@@ -126,6 +127,7 @@ fn _scicore_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add("csgraph", csgraph)?;
 
     let spatial = PyModule::new(py, "spatial")?;
+    geometry::register(&spatial)?;
     hausdorff::register(&spatial)?;
     kdtree::register(&spatial)?;
     spherical_voronoi::register(&spatial)?;
