@@ -58,7 +58,7 @@ def test_face_dataset():
     import scicore.datasets as sds
 
     img = sds.face()
-    assert img.shape[0] == 683  # face.png height
+    assert img.shape == (768, 1024, 3)  # raccoon face, 1024 x 768 RGB
 
 
 # ---------------- differentiate (broken) ----------------

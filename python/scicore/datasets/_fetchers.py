@@ -1,9 +1,77 @@
-import sys
+import pickle
 
-from rsnumpy import array, frombuffer, load
+from rsnumpy import array, dtype, frombuffer, load
+from scicore.version import version as _scicore_version
 from ._registry import registry, registry_urls
 
 from scicore._lib._array_api import xp_capabilities
+
+
+class _DtypeProxy:
+    """Placeholder for a pickled ``numpy.dtype`` object.
+
+    The dataset pickles build the dtype as ``numpy.dtype('u1', ...)`` and
+    then load a numpy-specific ``__setstate__`` payload that rsnumpy
+    cannot consume, so the proxy records the type string and ignores the
+    state.
+    """
+
+    def __init__(self, spec):
+        self._spec = spec
+
+    def __setstate__(self, state):
+        pass
+
+
+class _ArrayProxy:
+    """Placeholder for a pickled ``numpy.ndarray``.
+
+    numpy 1.x pickles build a zero-length placeholder via
+    ``numpy.core.multiarray._reconstruct`` and then load the real shape,
+    dtype and raw bytes through
+    ``__setstate__((version, shape, dtype, is_fortran, data))``.  The
+    proxy replays that payload as an rsnumpy array.
+    """
+
+    def __init__(self):
+        self._arr = None
+
+    def __setstate__(self, state):
+        shape = state[1]
+        spec = getattr(state[2], "_spec", state[2])
+        data = state[-1]
+        self._arr = frombuffer(bytes(data), dtype=dtype(spec)).reshape(shape)
+
+    @property
+    def array(self):
+        return self._arr
+
+
+def _numpy_reconstruct(subtype, shape, dtype):
+    return _ArrayProxy()
+
+
+def _numpy_dtype(spec, *args, **kwargs):
+    return _DtypeProxy(spec)
+
+
+class _NumPyUnpickler(pickle.Unpickler):
+    """Unpickler that resolves ``numpy.*`` globals as rsnumpy stand-ins.
+
+    The dataset files are pickled numpy arrays, so their pickle streams
+    reference ``numpy.core.multiarray._reconstruct``, ``numpy.ndarray``
+    and ``numpy.dtype`` by name.  These stand-ins reconstruct the data as
+    rsnumpy arrays without numpy installed.
+    """
+
+    def find_class(self, module, name):
+        if module == "numpy.core.multiarray" and name == "_reconstruct":
+            return _numpy_reconstruct
+        if module == "numpy" and name == "ndarray":
+            return _ArrayProxy
+        if module == "numpy" and name == "dtype":
+            return _numpy_dtype
+        return super().find_class(module, name)
 
 try:
     import pooch
@@ -33,7 +101,12 @@ def fetch_data(dataset_name, data_fetcher=data_fetcher):
                           "conda to install 'pooch'.")
     # https://github.com/scipy/scipy/issues/21879
     downloader = pooch.HTTPDownloader(
-        headers={"User-Agent": f"SciPy {sys.modules['scipy'].__version__}"}
+        headers={
+            "User-Agent": f"scicore {_scicore_version}",
+            # The dataset URLs use the GitHub contents API, which returns
+            # the raw file bytes when this media type is requested.
+            "Accept": "application/vnd.github.raw+json",
+        }
     )
     # The "fetch" method returns the full path to the downloaded data file.
     return data_fetcher.fetch(dataset_name, downloader=downloader)
@@ -68,16 +141,14 @@ def ascent():
     >>> plt.show()
 
     """
-    import pickle
-
     # The file will be downloaded automatically the first time this is run,
     # returning the path to the downloaded file. Afterwards, Pooch finds
     # it in the local cache and doesn't repeat the download.
     fname = fetch_data("ascent.dat")
     # Now we just need to load it with our standard Python tools.
     with open(fname, 'rb') as f:
-        ascent = array(pickle.load(f))
-    return ascent
+        proxy = _NumPyUnpickler(f).load()
+    return array(proxy.array)
 
 
 @xp_capabilities(out_of_scope=True)

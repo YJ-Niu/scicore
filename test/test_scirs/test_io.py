@@ -40,7 +40,7 @@ def test_mmfile_roundtrip():
     with tempfile.TemporaryDirectory() as td:
         fp = os.path.join(td, "t.mtx")
         sio.mmwrite(fp, sps.csr_matrix(np.array([[1.0, 0.0], [0.0, 2.0]])))
-        m = sio.mmread(fp)
+        m = sio.mmread(fp, spmatrix=False)
         assert np.allclose(m.toarray(), [[1.0, 0.0], [0.0, 2.0]])
 
 

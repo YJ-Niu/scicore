@@ -2,7 +2,7 @@ import warnings
 from . import _minpack
 
 import rsnumpy as np
-from rsnumpy import (atleast_1d, triu, shape, transpose, zeros, prod, greater,
+from rsnumpy import (atleast_1d, shape, transpose, zeros, prod, greater,
                    asarray, inf,
                    finfo, inexact, issubdtype, dtype)
 from scicore import linalg
@@ -289,6 +289,26 @@ LEASTSQ_SUCCESS = [1, 2, 3, 4]
 LEASTSQ_FAILURE = [5, 6, 7, 8]
 
 
+def _triu_inverse_upper(r):
+    """Inverse of a square upper triangular matrix (LAPACK dtrtri algorithm).
+
+    Pure-Python column-by-column back substitution used as a fallback for
+    backends without a dtrtri binding (e.g. rsnumpy). ``r`` is a list of
+    lists; raises LinAlgError on a zero diagonal.
+    """
+    n = len(r)
+    inv = [[0.0] * n for _ in range(n)]
+    for j in range(n):
+        for i in range(j, -1, -1):
+            if r[i][i] == 0.0:
+                raise LinAlgError('singular matrix in triangular inversion')
+            s = 1.0 if i == j else 0.0
+            for k in range(i + 1, j + 1):
+                s -= r[i][k] * inv[k][j]
+            inv[i][j] = s / r[i][i]
+    return inv
+
+
 def leastsq(func, x0, args=(), Dfun=None, full_output=False,
             col_deriv=False, ftol=1.49012e-8, xtol=1.49012e-8,
             gtol=0.0, maxfev=0, epsfcn=None, factor=100, diag=None):
@@ -487,19 +507,30 @@ def leastsq(func, x0, args=(), Dfun=None, full_output=False,
             # the result was not symmetric positive definite. See gh-4555.
             perm = retval[1]['ipvt']
             n = len(perm)
-            r = triu(transpose(retval[1]['fjac'])[:n, :])
+            # The pure-Python _lmdif/_lmder kernels return the n x n upper
+            # triangular QR factor directly in 'r' (their 'fjac' holds the
+            # raw Jacobian, not MINPACK's packed layout), so use it as-is.
+            r = retval[1]['r']
             inv_triu = linalg.get_lapack_funcs('trtri', (r,))
             try:
-                # inverse of permuted matrix is a permutation of matrix inverse
                 invR, trtri_info = inv_triu(r)  # default: upper, non-unit diag
                 if trtri_info != 0:  # explicit comparison for readability
                     raise LinAlgError(f'trtri returned info {trtri_info}')
-                invR[perm] = invR.copy()
-                cov_x = invR @ invR.T
+                invR = [list(map(float, row)) for row in np.asarray(invR).tolist()]
             except (LinAlgError, ValueError, NotImplementedError):
                 # The backend may lack triangular inversion (e.g. rsnumpy
-                # without dtrtri); leave cov_x as None rather than failing.
-                pass
+                # without dtrtri); fall back to pure-Python back
+                # substitution (the LAPACK dtrtri algorithm).
+                r = [list(map(float, row)) for row in np.asarray(r).tolist()]
+                invR = _triu_inverse_upper(r)
+            # inverse of permuted matrix is a permutation of matrix inverse
+            perm_list = [int(v) for v in np.asarray(perm).tolist()]
+            permuted = [None] * n
+            for i in range(n):
+                permuted[perm_list[i]] = invR[i]
+            cov_x = np.array([[sum(a * b for a, b in zip(row, other))
+                                for other in permuted]
+                               for row in permuted])
         return (retval[0], cov_x) + retval[1:-1] + (errors[info][0], info)
     else:
         if info in LEASTSQ_FAILURE:

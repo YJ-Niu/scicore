@@ -1,6 +1,3 @@
-import os
-from warnings import warn
-
 from ._base import _spbase
 
 
@@ -23,17 +20,6 @@ class spmatrix(_spbase):
     _allow_nd: tuple[int, ...] = (2,)
 
     def __init__(self, *args, **kwargs):
-        msg = f"""{self.__class__.__name__} is being replaced by {self.format}_array.
-
-        All sparse matrix classes (*_matrix) are being deprecated in favor of
-        sparse arrays (*_array), which have a NumPy-compatible API, e.g. `*`
-        is elementwise multiplication. See the spmatrix to sparray migration guide
-        https://docs.scipy.org/doc/scipy/reference/sparse.migration_to_sparray.html
-
-        The spmatrix classes will be removed no earlier than v2.2.
-        """
-        prefixes = (os.path.dirname(__file__),)
-        warn(msg, category=DeprecationWarning, skip_file_prefixes=prefixes)
         super().__init__(*args, **kwargs)
 
     @property

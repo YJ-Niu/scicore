@@ -170,12 +170,46 @@ def test_linprog():
     assert abs(x[0] + x[1] - 1.0) < 1e-6
 
 
+def _exponential_fit_reference():
+    # scipy 1.18.1 reference for a*exp(-b*t) on t=[0..4],
+    # y=[5.0, 3.0, 1.0, 0.4, 0.15]
+    popt = [5.137438402744526, 0.7083734270360839]
+    pcov = [[0.11643927240789177, 0.014280325328315057],
+            [0.014280325328315057, 0.008798068400055115]]
+    return popt, pcov
+
+
+def _assert_pcov_close(pcov, ref, tol=1e-5):
+    pc = [[float(v) for v in row] for row in np.asarray(pcov).tolist()]
+    for row, row_ref in zip(pc, ref):
+        for v, v_ref in zip(row, row_ref):
+            assert abs(v - v_ref) <= tol, (v, v_ref)
+
+
 def test_curve_fit_exponential():
     t = np.arange(5)
     y = [5.0, 3.0, 1.0, 0.4, 0.15]
-    popt, _ = sopt.curve_fit(lambda t, a, b: a * np.exp(-b * t), t, y)
+    popt, pcov = sopt.curve_fit(lambda t, a, b: a * np.exp(-b * t), t, y)
     assert np.isclose(popt[0], 5.0, atol=0.5)
     assert np.isclose(popt[1], 0.5, atol=0.3)
+    _assert_pcov_close(pcov, _exponential_fit_reference()[1])
+
+
+def test_curve_fit_exponential_jac():
+    # analytic-Jacobian (lmder) path: same fit and covariance
+    t = np.arange(5)
+    y = [5.0, 3.0, 1.0, 0.4, 0.15]
+    tv = [0.0, 1.0, 2.0, 3.0, 4.0]
+
+    def jac(t, a, b):
+        return [[float(np.exp(-b * tv[i])),
+                 -tv[i] * a * float(np.exp(-b * tv[i]))] for i in range(5)]
+
+    popt, pcov = sopt.curve_fit(lambda t, a, b: a * np.exp(-b * t), t, y,
+                                jac=jac)
+    assert np.isclose(popt[0], 5.0, atol=0.5)
+    assert np.isclose(popt[1], 0.5, atol=0.3)
+    _assert_pcov_close(pcov, _exponential_fit_reference()[1])
 
 
 def test_leastsq():
