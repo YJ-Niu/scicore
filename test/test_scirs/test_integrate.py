@@ -1,4 +1,6 @@
 """scicore.integrate — functional tests against analytical references."""
+import math
+
 import pytest
 import rsnumpy as np
 
@@ -200,6 +202,132 @@ def test_lsoda_continuation():
     # y(t) = [cos t, sin t]  =>  y(pi) = [-1, 0]
     assert np.allclose(np.asarray(y).tolist(), [-1.0, 0.0], atol=1e-7)
     assert o.successful()
+
+
+# ---------------- banded Jacobian (jt=4/5) + step/relax (itask=2/3) ----------------
+
+_N_HEAT = 30
+_H = 1.0 / (_N_HEAT + 1)
+_H2 = _H * _H
+
+
+def _heat_f(t, y):
+    # 1D heat equation, _N_HEAT interior points, zero Dirichlet boundaries
+    y = [0.0] + list(y) + [0.0]
+    return [(y[i + 1] - 2.0 * y[i] + y[i - 1]) / _H2 for i in range(1, _N_HEAT + 1)]
+
+
+def _heat_jac(t, y):
+    # tridiagonal Jacobian in compressed banded form (lband+uband+1, n) = (3, n)
+    J = [[0.0] * _N_HEAT for _ in range(3)]
+    for i in range(_N_HEAT):
+        J[1][i] = -2.0 / _H2
+    for i in range(1, _N_HEAT):
+        J[2][i - 1] = 1.0 / _H2
+    for i in range(_N_HEAT - 1):
+        J[0][i] = 1.0 / _H2
+    return J
+
+
+def _heat_y0():
+    return [math.sin(math.pi * (i + 1) * _H) for i in range(_N_HEAT)]
+
+
+def _heat_exact(t):
+    # exact semi-discrete solution: the sine vector is the k=1 eigenvector of
+    # the tridiagonal Laplacian, eigenvalue (-2 + 2cos(pi/(N+1)))/h^2
+    lam1 = (-2.0 + 2.0 * math.cos(math.pi / (_N_HEAT + 1))) / _H2
+    c = math.exp(lam1 * t)
+    return [c * math.sin(math.pi * (i + 1) * _H) for i in range(_N_HEAT)]
+
+
+def test_lsoda_banded_user_jac():
+    # stiff tridiagonal heat equation, user banded Jacobian (jt=4), BDF mode
+    o = sint.ode(_heat_f, _heat_jac)
+    o.set_integrator('lsoda', lband=1, uband=1, with_jacobian=True,
+                     rtol=1e-10, atol=1e-12, nsteps=5000)
+    o.set_initial_value(_heat_y0(), 0.0)
+    y = o.integrate(0.5)
+    assert np.allclose(np.asarray(y).tolist(), _heat_exact(0.5), atol=1e-6)
+    assert o.successful()
+
+
+def test_lsoda_banded_fd_jac():
+    # same banded problem, internally generated banded Jacobian (jt=5)
+    o = sint.ode(_heat_f)
+    o.set_integrator('lsoda', lband=1, uband=1, rtol=1e-10, atol=1e-12,
+                     nsteps=5000)
+    o.set_initial_value(_heat_y0(), 0.0)
+    y = o.integrate(0.5)
+    assert np.allclose(np.asarray(y).tolist(), _heat_exact(0.5), atol=1e-6)
+    assert o.successful()
+
+
+def test_lsoda_banded_continuation():
+    # banded problem continued over three integrate() calls (istate 1 -> 2)
+    o = sint.ode(_heat_f, _heat_jac)
+    o.set_integrator('lsoda', lband=1, uband=1, with_jacobian=True,
+                     rtol=1e-10, atol=1e-12, nsteps=5000)
+    o.set_initial_value(_heat_y0(), 0.0)
+    y = o.integrate(0.15)
+    y = o.integrate(0.30)
+    y = o.integrate(0.45)
+    assert np.allclose(np.asarray(y).tolist(), _heat_exact(0.45), atol=1e-6)
+    assert o.successful()
+
+
+def test_lsoda_lowlevel_step():
+    # itask=2 single-step mode: a few low-level steps stay on the orbit
+    from scicore.integrate._odepack import lsoda as lsoda_low
+
+    n = 2
+    lrw = max(20 + 16 * n, 22 + 9 * n + n * n)
+    liw = 20 + n
+    rwork = np.zeros((lrw,), float)
+    iwork = np.zeros((liw,), dtype=np.int32)
+    iwork[5] = 10000
+    iwork[7] = 12
+    iwork[8] = 5
+    sd = np.zeros(240, float)
+    si = np.zeros(48, dtype=np.int32)
+    f = lambda t, y: [-y[1], y[0]]
+    y = np.array([1.0, 0.0], float)
+    t, istate = 0.0, 1
+    for _ in range(4):
+        y, t, istate = lsoda_low(f, y, t, 1.0, 1e-10, 1e-12, 2, istate,
+                                 rwork, iwork, None, 2, (), 1, (), sd, si)
+    assert istate == 2
+    assert 0.0 < t <= 1.0
+    assert abs(float(y[0]) - math.cos(t)) < 1e-6
+    assert abs(float(y[1]) - math.sin(t)) < 1e-6
+
+
+def test_lsoda_lowlevel_relax():
+    # itask=3 relax: from t=0.5 relax to t=1.0, lands at t >= 1.0 on the orbit
+    from scicore.integrate._odepack import lsoda as lsoda_low
+
+    n = 2
+    lrw = max(20 + 16 * n, 22 + 9 * n + n * n)
+    liw = 20 + n
+    rwork = np.zeros((lrw,), float)
+    iwork = np.zeros((liw,), dtype=np.int32)
+    iwork[5] = 10000
+    iwork[7] = 12
+    iwork[8] = 5
+    sd = np.zeros(240, float)
+    si = np.zeros(48, dtype=np.int32)
+    f = lambda t, y: [-y[1], y[0]]
+    y = np.array([1.0, 0.0], float)
+    t, istate = 0.0, 1
+    y, t, istate = lsoda_low(f, y, t, 0.5, 1e-10, 1e-12, 1, istate,
+                             rwork, iwork, None, 2, (), 1, (), sd, si)
+    assert istate == 2 and abs(t - 0.5) < 1e-10
+    y, t, istate = lsoda_low(f, y, t, 1.0, 1e-10, 1e-12, 3, 2,
+                             rwork, iwork, None, 2, (), 1, (), sd, si)
+    assert istate == 2
+    assert t >= 1.0
+    assert abs(float(y[0]) - math.cos(t)) < 1e-6
+    assert abs(float(y[1]) - math.sin(t)) < 1e-6
 
 
 # ---------------- not yet ported / broken ----------------
