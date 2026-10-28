@@ -124,6 +124,84 @@ def test_dop853_undamped_frequency():
     assert o.successful()
 
 
+# ---------------- lsoda (integrate._odepack) ----------------
+
+def _rob_f(t, y):
+    k1, k2, k3 = 0.04, 1e4, 3e3
+    return [
+        -k1 * y[0] + k3 * y[1] * y[2],
+        k1 * y[0] - k2 * y[1] * y[1] - k3 * y[1] * y[2],
+        k2 * y[1] * y[1],
+    ]
+
+
+# scipy.integrate.lsoda reference at t=10, rtol=1e-10, atol=1e-12
+_ROB_T10 = [9.647295043727e-01, 3.564128693693e-04, 3.491408275789e-02]
+
+
+def test_lsoda_harmonic_oscillator():
+    # non-stiff; default integrator of ode() is lsoda
+    o = sint.ode(lambda t, y: [-y[1], y[0]])
+    o.set_integrator('lsoda', rtol=1e-10, atol=1e-12)
+    o.set_initial_value([1.0, 0.0], 0.0)
+    y = o.integrate(2.0 * np.pi)
+    assert np.allclose(np.asarray(y).tolist(), [1.0, 0.0], atol=1e-7)
+    assert o.successful()
+
+
+def test_lsoda_user_jacobian():
+    o = sint.ode(
+        lambda t, y: [-y[1], y[0]],
+        lambda t, y: [[0.0, -1.0], [1.0, 0.0]],
+    )
+    o.set_integrator('lsoda', rtol=1e-10, atol=1e-12)
+    o.set_initial_value([1.0, 0.0], 0.0)
+    y = o.integrate(2.0 * np.pi)
+    assert np.allclose(np.asarray(y).tolist(), [1.0, 0.0], atol=1e-7)
+    assert o.successful()
+
+
+def test_lsoda_robertson_stiff_fd_jac():
+    # stiff; switches Adams -> BDF internally (FD Jacobian, jt=2)
+    o = sint.ode(_rob_f)
+    o.set_integrator('lsoda', rtol=1e-10, atol=1e-12, nsteps=5000)
+    o.set_initial_value([1.0, 0.0, 0.0], 0.0)
+    y = o.integrate(10.0)
+    assert np.allclose(np.asarray(y).tolist(), _ROB_T10, atol=1e-8)
+    assert o.successful()
+
+
+def test_lsoda_robertson_stiff_user_jac():
+    # stiff with user Jacobian (jt=1)
+    k1, k2, k3 = 0.04, 1e4, 3e3
+
+    def jac(t, y):
+        return [
+            [-k1, k3 * y[2], k3 * y[1]],
+            [k1, -2 * k2 * y[1] - k3 * y[2], -k3 * y[1]],
+            [0.0, 2 * k2 * y[1], 0.0],
+        ]
+
+    o = sint.ode(_rob_f, jac)
+    o.set_integrator('lsoda', rtol=1e-10, atol=1e-12, nsteps=5000)
+    o.set_initial_value([1.0, 0.0, 0.0], 0.0)
+    y = o.integrate(10.0)
+    assert np.allclose(np.asarray(y).tolist(), _ROB_T10, atol=1e-8)
+    assert o.successful()
+
+
+def test_lsoda_continuation():
+    # two consecutive integrate() calls must continue state (istate 1 -> 2)
+    o = sint.ode(lambda t, y: [-y[1], y[0]])
+    o.set_integrator('lsoda', rtol=1e-10, atol=1e-12)
+    o.set_initial_value([1.0, 0.0], 0.0)
+    o.integrate(np.pi / 2)
+    y = o.integrate(np.pi)
+    # y(t) = [cos t, sin t]  =>  y(pi) = [-1, 0]
+    assert np.allclose(np.asarray(y).tolist(), [-1.0, 0.0], atol=1e-7)
+    assert o.successful()
+
+
 # ---------------- not yet ported / broken ----------------
 
 def test_quad_polynomial():

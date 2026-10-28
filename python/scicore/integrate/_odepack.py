@@ -16,15 +16,10 @@ Replaces the deleted C ``_odepack`` extension with pure-Python implementations:
 from __future__ import annotations
 
 import math
-import os
 import sys
 
 import rsnumpy as np
 
-
-def _dbg(msg):
-    if os.environ.get('LSODA_DEBUG'):
-        print(msg, file=sys.stderr)
 
 __all__ = ['odeint', 'ODEintWarning', 'lsoda', 'zvode', 'dvode']
 
@@ -64,7 +59,7 @@ def odeint(func, y0, t, args=(), Dfun=None, col_deriv=0, ml=None, mu=None,
         k2 = f(t_val + 0.5 * h, [yv[i] + 0.5 * h * k1[i] for i in range(n)])
         k3 = f(t_val + 0.5 * h, [yv[i] + 0.5 * h * k2[i] for i in range(n)])
         k4 = f(t_val + h, [yv[i] + h * k3[i] for i in range(n)])
-        return [yv[i] + h / 6.0 * (k1[i] + 2.0 * k2[i] + 2.0 * k3[i] + 2.0 * k4[i])
+        return [yv[i] + h / 6.0 * (k1[i] + 2.0 * k2[i] + 2.0 * k3[i] + k4[i])
                 for i in range(n)]
 
     rows = [y[:]]
@@ -610,7 +605,6 @@ def _stoda_adjust_step_size(S, rw, rh):
     n = S['n']
     nyh = S['nyh']
     lyh = S['lyh']
-    _dbg(f"  [adjust] rh_in={rh[0]:.17e} rmax={S['rmax']:.6f} h={S['h']:.17e}")
     rh[0] = min(rh[0], S['rmax'])
     rh[0] = rh[0] / max(1.0, abs(S['h']) * S['hmxi'] * rh[0])
     # meth == 1: restrict by the stability region (set irflag if reduced)
@@ -628,7 +622,6 @@ def _stoda_adjust_step_size(S, rw, rh):
     S['h'] = S['h'] * rh[0]
     S['rc'] = S['rc'] * rh[0]
     S['ialth'] = S['l']
-    _dbg(f"  [adjust] rh_out={rh[0]:.17e} h_new={S['h']:.17e}")
 
 
 def _stoda_corrector_loop(cb, S, rw, iw, y, neq, pnorm):
@@ -670,8 +663,6 @@ def _stoda_corrector_loop(cb, S, rw, iw, y, neq, pnorm):
         rw[lacor + i] = 0.0
 
     while True:
-        _dbg(f"  [corr] m={m} del={del_:.17e} delp={delp:.17e} "
-             f"pnorm={pnorm:.17e}")
         if S['miter'] == 0:
             # functional iteration
             for i in range(n):
@@ -828,10 +819,6 @@ def _stoda(cb, S, rw, iw, y, neq):
     told = S['tn']
     should_reset_rmax = 0
 
-    _dbg(f"[stoda] enter: nq={S['nq']} l={S['l']} h={S['h']:.17e} "
-         f"ialth={S['ialth']} ipup={S['ipup']} pdlast={S['pdlast']:.6e} "
-         f"rmax={S['rmax']:.6f} jstart={S['jstart']}")
-
     S['kflag'] = 0
     S['ierpj'] = 0
     S['iersl'] = 0
@@ -902,8 +889,6 @@ def _stoda(cb, S, rw, iw, y, neq):
             dsm = del_corr / S['tesco'][1 + (S['nq'] - 1) * 3]
         else:
             dsm = _vmnorm(n, rw, lacor, rw, lewt) / S['tesco'][1 + (S['nq'] - 1) * 3]
-        _dbg(f"  [450] m_corr={m_corr} del_corr={del_corr:.17e} "
-             f"dsm={dsm:.17e}")
 
         if dsm > 1.0:
             # ---- 500: the step failed the error test ----
@@ -989,7 +974,7 @@ def _stoda(cb, S, rw, iw, y, neq):
                             nqm2 = S['mxords']
                             lm2 = S['mxords'] + 1
                             exm2 = 1.0 / lm2
-                            dm2 = _vmnorm(n, rw, lm2 * nyh, rw, lewt) / \
+                            dm2 = _vmnorm(n, rw, lyh + lm2 * nyh, rw, lewt) / \
                                 S['cm2'][S['mxords'] - 1]
                             rh2 = 1.0 / (1.2 * dm2 ** exm2 + 0.0000012)
                         else:
@@ -1024,7 +1009,7 @@ def _stoda(cb, S, rw, iw, y, neq):
                     nqm1 = S['mxordn']
                     lm1 = S['mxordn'] + 1
                     exm1 = 1.0 / lm1
-                    dm1 = _vmnorm(n, rw, lm1 * nyh, rw, lewt) / \
+                    dm1 = _vmnorm(n, rw, lyh + lm1 * nyh, rw, lewt) / \
                         S['cm1'][S['mxordn'] - 1]
                     rh1 = 1.0 / (1.2 * dm1 ** exm1 + 0.0000012)
                 rh1it = 2.0 * rh1
@@ -1063,9 +1048,6 @@ def _stoda(cb, S, rw, iw, y, neq):
                         S['tesco'][2 + (S['nq'] - 1) * 3]
                     exup = 1.0 / (S['l'] + 1.0)
                     rhup = 1.0 / (1.4 * dup ** exup + 0.0000014)
-                    _dbg(f"  [520] dup={dup:.17e} exup={exup:.17e} "
-                         f"rhup={rhup:.17e} "
-                         f"tesco3={S['tesco'][2 + (S['nq'] - 1) * 3]:.6f}")
                 # fall through to 540
             else:
                 if not ((S['ialth'] > 1) or (S['l'] == S['lmax'])):
@@ -1084,12 +1066,10 @@ def _stoda(cb, S, rw, iw, y, neq):
         rhsm = 1.0 / (1.2 * dsm ** exsm + 0.0000012)
         rhdn = 0.0
         if S['nq'] != 1:
-            ddn = _vmnorm(n, rw, (S['l'] - 1) * nyh, rw, lewt) / \
+            ddn = _vmnorm(n, rw, lyh + (S['l'] - 1) * nyh, rw, lewt) / \
                 S['tesco'][(S['nq'] - 1) * 3]
             exdn = 1.0 / S['nq']
             rhdn = 1.0 / (1.3 * ddn ** exdn + 0.0000013)
-        _dbg(f"  [540] dsm={dsm:.17e} exsm={exsm:.17e} rhsm={rhsm:.17e} "
-             f"rhdn={rhdn:.17e} rhup={rhup:.17e}")
 
         # 550: Adams stability-region restrictions
         if S['meth'] == 1:
@@ -1100,7 +1080,6 @@ def _stoda(cb, S, rw, iw, y, neq):
             if S['nq'] > 1:
                 rhdn = min(rhdn, sm1[S['nq'] - 2] / pdh)
             S['pdest'] = 0.0
-            _dbg(f"  [550] pdh={pdh:.17e} rhup={rhup:.17e} rhsm={rhsm:.17e}")
 
         # 560
         if rhsm >= rhup:
@@ -1139,7 +1118,6 @@ def _stoda(cb, S, rw, iw, y, neq):
                 if (S['kflag'] < 0) and (rh[0] > 1.0):
                     rh[0] = 1.0
 
-        _dbg(f"  [560] newq={newq} rh={rh[0]:.17e}")
         # 620: bypass the 10% test for a stability-restricted Adams step
         bypass = (S['meth'] == 1) and (
             rh[0] * pdh * 1.00001 >= sm1[newq - 1])
