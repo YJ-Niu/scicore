@@ -1334,7 +1334,9 @@ class lsoda(IntegratorBase):
         if jt in [1, 2]:
             lrs = 22 + (self.max_order_s + 4) * n + n * n
         elif jt in [4, 5]:
-            lrs = 22 + (self.max_order_s + 5 + 2 * self.ml + self.mu) * n
+            # banded Jacobians are expanded to a full matrix in
+            # _odepack._prja, so the LU workspace is n*n (as jt=1/2)
+            lrs = 22 + (self.max_order_s + 4) * n + n * n
         else:
             raise ValueError(f'Unexpected jt={jt}')
         lrw = max(lrn, lrs)
