@@ -220,13 +220,17 @@ class _LsodaCallbacks:
 
     def f(self, t, y):
         """Evaluate user f; returns a flat float list, or None on callback
-        error (neq[0] set to -1, mirroring the C error flag)."""
+        error (neq[0] set to -1, mirroring the C error flag).
+
+        ``y`` is passed through as a plain Python list (not an array) so the
+        user function's arithmetic stays on native floats; this mirrors the
+        ``odeint`` convention and avoids per-element rsnumpy scalar overhead.
+        """
         try:
-            ya = np.array(y)
             if self.tfirst:
-                res = self.fun(t, ya, *self.f_params)
+                res = self.fun(t, y, *self.f_params)
             else:
-                res = self.fun(ya, t, *self.f_params)
+                res = self.fun(y, t, *self.f_params)
             return _flat_floats(res)
         except Exception:
             self.neq[0] = -1
@@ -235,13 +239,15 @@ class _LsodaCallbacks:
 
     def jac(self, t, y):
         """Evaluate user Jacobian; returns a list of float lists, or None on
-        callback error (neq[0] set to -1)."""
+        callback error (neq[0] set to -1).
+
+        ``y`` is passed through as a plain Python list (see ``f``).
+        """
         try:
-            ya = np.array(y)
             if self.tfirst:
-                res = self.jac(t, ya, *self.jac_params)
+                res = self.jac(t, y, *self.jac_params)
             else:
-                res = self.jac(ya, t, *self.jac_params)
+                res = self.jac(y, t, *self.jac_params)
             return _rows_floats(res)
         except Exception:
             self.neq[0] = -1
