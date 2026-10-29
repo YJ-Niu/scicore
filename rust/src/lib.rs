@@ -22,6 +22,7 @@ mod lfilter;
 mod max_len_seq_inner;
 mod median_filter_2d;
 mod mio_utils;
+mod ndimage_filters1d;
 mod ndimage_label;
 mod peak_finding_utils;
 mod qmc;
@@ -147,6 +148,7 @@ fn _scicore_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
 
     let ndimage = PyModule::new(py, "ndimage")?;
     ndimage_label::register(&ndimage)?;
+    ndimage_filters1d::register(&ndimage)?;
     rank_filter_1d::register(&ndimage)?;
     module.add("ndimage", ndimage)?;
 

@@ -20,6 +20,11 @@ from itertools import product
 
 import rsnumpy as np
 
+try:
+    from scicore._scicore_rs import ndimage as _rust_ndimage
+except ImportError:  # Rust extension not built
+    _rust_ndimage = None
+
 # ---------------------------------------------------------------------------
 # extension-mode codes
 # ---------------------------------------------------------------------------
@@ -51,6 +56,23 @@ def _get_elem(arr, idx):
 
 def _set_elem(arr, idx, val):
     arr[idx] = val
+
+
+def _rust_f64_1d_ok(input, output):
+    """True when the Rust 1-D kernels may run (float64 in and out)."""
+    if _rust_ndimage is None:
+        return False
+    for a in (input, output):
+        dt = getattr(a, "dtype", None)
+        if dt is None or dt.kind != "f" or dt.itemsize != 8:
+            return False
+    return True
+
+
+def _rust_first_leaf(v):
+    while isinstance(v, list):
+        v = v[0]
+    return float(v)
 
 
 def _iter_lines(arr, axis):
@@ -111,15 +133,17 @@ def _boundary_index(cc, n, mode):
         return 0
     if 0 <= cc < n:
         return cc
-    if mode == _MODE_MIRROR:
-        # scipy mirror: d e d c b a | a b c d e d
-        # (edge duplicated, period 2*n)
+    if mode == _MODE_REFLECT:
+        # scipy reflect: abcddcba|abcd|dcbaabcd (edge duplicated,
+        # period 2*n) — ni_support.c NI_ExtendLine NI_EXTEND_REFLECT.
+        # NOTE: the scipy docs ASCII patterns for reflect/mirror are
+        # swapped relative to the C implementation; follow the C code.
         sz2 = 2 * n
         t = cc % sz2
         return t if t < n else sz2 - 1 - t
-    if mode == _MODE_REFLECT:
-        # scipy reflect: d e d c b | a b c d e d
-        # (edge not duplicated, period 2*(n-1))
+    if mode == _MODE_MIRROR:
+        # scipy mirror: cbabcdcb|abcd|cbabcdcb (edge not duplicated,
+        # period 2*(n-1)) — ni_support.c NI_ExtendLine NI_EXTEND_MIRROR.
         sz2 = 2 * n - 2
         t = cc % sz2
         return t if t <= n - 1 else sz2 - t
@@ -142,6 +166,16 @@ def _line_value(line, k, n, mode, cval):
 # ---------------------------------------------------------------------------
 def correlate1d(input, weights, axis, output, mode, cval, origin=0):
     """Correlate the lines of ``input`` along ``axis`` with ``weights``."""
+    if _rust_f64_1d_ok(input, output):
+        try:
+            # Zero-copy write-back directly into ``output`` (writable-buffer
+            # rsnumpy); fall through to the pure-Python path on any failure.
+            _rust_ndimage._correlate1d_into(
+                input, output, list(input.shape), _to_float_list(weights),
+                axis, int(mode), float(cval), int(origin))
+            return
+        except Exception:
+            pass
     w = _to_float_list(weights)
     W = len(w)
     half = W // 2
@@ -160,6 +194,16 @@ def correlate1d(input, weights, axis, output, mode, cval, origin=0):
 
 def uniform_filter1d(input, size, axis, output, mode, cval, origin=0):
     """Uniform (moving-average) filter along ``axis`` with window ``size``."""
+    if _rust_f64_1d_ok(input, output):
+        try:
+            # Zero-copy write-back directly into ``output`` (writable-buffer
+            # rsnumpy); fall through to the pure-Python path on any failure.
+            _rust_ndimage._uniform_filter1d_into(
+                input, output, list(input.shape), int(size), axis,
+                int(mode), float(cval), int(origin))
+            return
+        except Exception:
+            pass
     size = int(size)
     half = size // 2
     for other, line in _iter_lines(input, axis):
@@ -178,6 +222,16 @@ def uniform_filter1d(input, size, axis, output, mode, cval, origin=0):
 def min_or_max_filter1d(input, size, axis, output, mode, cval, origin=0,
                         minimum=1):
     """Sliding min/max filter along ``axis`` with window ``size``."""
+    if _rust_f64_1d_ok(input, output):
+        try:
+            # Zero-copy write-back directly into ``output`` (writable-buffer
+            # rsnumpy); fall through to the pure-Python path on any failure.
+            _rust_ndimage._min_or_max_filter1d_into(
+                input, output, list(input.shape), int(size), axis,
+                int(mode), float(cval), int(origin), bool(minimum))
+            return
+        except Exception:
+            pass
     size = int(size)
     half = size // 2
     for other, line in _iter_lines(input, axis):

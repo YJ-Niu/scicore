@@ -214,14 +214,15 @@ def test_fourier_gaussian_real_fft_path():
 # ---------------- generic filters ----------------
 
 def test_boundary_index_modes():
-    # scipy conventions:
-    # reflect (d e d c b | a b c d e d, period 2*(n-1), edge not duplicated)
-    # mirror  (d e d c b a | a b c d e d, period 2*n, edge duplicated)
+    # scipy conventions — follow the C implementation (ni_support.c
+    # NI_ExtendLine); the ASCII patterns in the scipy docs are swapped:
+    # reflect (abcddcba|abcd|dcbaabcd, period 2*n, edge duplicated)
+    # mirror  (cbabcdcb|abcd|cbabcdcb, period 2*(n-1), edge not duplicated)
     from scicore.ndimage._nd_image import _boundary_index
-    assert [_boundary_index(i, 5, 2) for i in (-2, -1, 5, 6)] == [2, 1, 3, 2]
-    assert [_boundary_index(i, 5, 3) for i in (-2, -1, 5, 6)] == [1, 0, 4, 3]
-    assert [_boundary_index(i, 3, 2) for i in (-2, -1, 3, 4)] == [2, 1, 1, 0]
-    assert [_boundary_index(i, 3, 3) for i in (-2, -1, 3, 4)] == [1, 0, 2, 1]
+    assert [_boundary_index(i, 5, 2) for i in (-2, -1, 5, 6)] == [1, 0, 4, 3]
+    assert [_boundary_index(i, 5, 3) for i in (-2, -1, 5, 6)] == [2, 1, 3, 2]
+    assert [_boundary_index(i, 3, 2) for i in (-2, -1, 3, 4)] == [1, 0, 2, 1]
+    assert [_boundary_index(i, 3, 3) for i in (-2, -1, 3, 4)] == [2, 1, 1, 0]
     assert [_boundary_index(i, 5, 0) for i in (-3, 7)] == [0, 4]
     assert [_boundary_index(i, 5, 1) for i in (-3, 7)] == [2, 2]
 
@@ -287,9 +288,11 @@ def test_generic_filter_median():
 
     out = ndi.generic_filter(img, med, size=3)
     assert out[1, 1] == 5.0
-    # scipy reflect at the corner: window is {1, 2, 2, 4, 4, 5, 5, 5, 5}
-    assert out[0, 0] == 4.0
-    assert out[0, 1] == 4.0
+    # scipy reflect (edge duplicated) at the corner: window is
+    # {1, 1, 2, 1, 1, 2, 4, 4, 5}; along the top edge:
+    # {1, 2, 3, 1, 2, 3, 4, 5, 6}
+    assert out[0, 0] == 2.0
+    assert out[0, 1] == 3.0
 
 
 def test_generic_filter_constant_cval():
@@ -306,8 +309,9 @@ def test_generic_filter_cross_footprint():
     fp = np.array([[0, 1, 0], [1, 1, 1], [0, 1, 0]], dtype=bool)
     out = ndi.generic_filter(img, lambda b: float(np.sum(b)), footprint=fp)
     assert out[1, 1] == 25.0
-    # (0,1): cross with reflect extension {5, 1, 2, 3, 5}
-    assert out[0, 1] == 16.0
+    # (0,1): cross with scipy reflect (edge duplicated) extension
+    # {2, 1, 2, 3, 5}
+    assert out[0, 1] == 13.0
 
 
 # ---------------- watershed_ift ----------------
